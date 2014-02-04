@@ -1,20 +1,20 @@
 #define CRYPTOPP_ENABLE_NAMESPACE_WEAK 1
 
 #include <GarrysMod/Lua/Interface.h>
-#include <base64.h>
-#include <crc.h>
-#include <sha.h>
-#include <tiger.h>
-#include <md2.h>
-#include <md4.h>
-#include <md5.h>
-#include <whrlpool.h>
-#include <ripemd.h>
-#include <aes.h>
-#include <gcm.h>
-#include <rsa.h>
-#include <osrng.h>
-#include <hex.h>
+#include <cryptopp/base64.h>
+#include <cryptopp/crc.h>
+#include <cryptopp/sha.h>
+#include <cryptopp/tiger.h>
+#include <cryptopp/md2.h>
+#include <cryptopp/md4.h>
+#include <cryptopp/md5.h>
+#include <cryptopp/whrlpool.h>
+#include <cryptopp/ripemd.h>
+#include <cryptopp/aes.h>
+#include <cryptopp/gcm.h>
+#include <cryptopp/rsa.h>
+#include <cryptopp/osrng.h>
+#include <cryptopp/hex.h>
 
 #define LUA_ERROR( ) ( LUA->ThrowError( LUA->GetString( ) ), 0 )
 
