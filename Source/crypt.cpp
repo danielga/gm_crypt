@@ -406,6 +406,8 @@ HashFunc( lRipeMod320, RIPEMD320 );
 
 GMOD_MODULE_OPEN( )
 {
+	LUA->PushSpecial( GarrysMod::Lua::SPECIAL_GLOB );
+
 	LUA->CreateTable( );
 
 	SetCryptFunc( "crc16", lCRC16 );
@@ -436,7 +438,9 @@ GMOD_MODULE_OPEN( )
 	SetCryptFunc( "base64Encode", lBase64Encode );
 	SetCryptFunc( "base64Decode", lBase64Decode );
 
-	return 1;
+	LUA->SetField( -2, "crypt" );
+
+	return 0;
 }
 
 GMOD_MODULE_CLOSE( )
