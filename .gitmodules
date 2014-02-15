@@ -1,4 +1,4 @@
 [submodule "gmod-module-base"]
 	path = gmod-module-base
-	url = https://tuestu1@bitbucket.org/tuestu1/gmod-module-base.git
+	url = https://bitbucket.org/danielga/gmod-module-base.git
 	branch = master
