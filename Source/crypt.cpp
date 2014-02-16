@@ -13,6 +13,7 @@
 #include <cryptopp/rsa.h>
 #include <cryptopp/osrng.h>
 #include <cryptopp/hex.h>
+#include <stdint.h>
 
 #define LUA_ERROR( ) ( LUA->ThrowError( LUA->GetString( ) ), 0 )
 
