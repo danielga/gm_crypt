@@ -14,12 +14,16 @@ solution("gm_crypt")
 
 	configuration("windows")
 		includedirs({os.get() .. "/cryptopp/include"})
+		links({"cryptopp"})
 
 		configuration({"windows", "Debug"})
 			libdirs({os.get() .. "/cryptopp/lib/debug"})
 
 		configuration({"windows", "Release"})
 			libdirs({os.get() .. "/cryptopp/lib/release"})
+
+	configuration("not windows")
+		linkoptions({"-Wl,-Bstatic,-lcryptopp,-Bdynamic"})
 
 	configurations({"Debug", "Release"})
 
@@ -41,7 +45,6 @@ solution("gm_crypt")
 		includedirs({GARRYSMOD_INCLUDES_PATH})
 		files({"../Source/*.cpp"})
 		vpaths({["Source files"] = "**.cpp"})
-		links({"cryptopp"})
 		
 		targetprefix("gmsv_") -- Just to remove prefixes like lib from Linux
 		targetname("crypt")
@@ -63,7 +66,6 @@ solution("gm_crypt")
 		includedirs({GARRYSMOD_INCLUDES_PATH})
 		files({"../Source/*.cpp"})
 		vpaths({["Source files"] = "**.cpp"})
-		links({"cryptopp"})
 
 		targetprefix("gmcl_") -- Just to remove prefixes like lib from Linux
 		targetname("crypt")
