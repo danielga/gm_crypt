@@ -1,1 +1,0 @@
-premake4win --os=windows vs2010

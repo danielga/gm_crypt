@@ -1,5 +1,3 @@
-#define CRYPTOPP_ENABLE_NAMESPACE_WEAK 1
-
 #include <GarrysMod/Lua/Interface.h>
 #include <cryptopp/base64.h>
 #include <cryptopp/crc.h>
@@ -23,7 +21,7 @@ LUA_FUNCTION( lBase64Encode )
 	LUA->CheckType( 1, GarrysMod::Lua::Type::STRING );
 
 	size_t dataLength = 0;
-	const byte *data = reinterpret_cast<const byte *>( LUA->GetString( 1, &dataLength ) );
+	const uint8_t *data = reinterpret_cast<const uint8_t *>( LUA->GetString( 1, &dataLength ) );
 
 	try
 	{
@@ -50,7 +48,7 @@ LUA_FUNCTION( lBase64Decode )
 	LUA->CheckType( 1, GarrysMod::Lua::Type::STRING );
 
 	size_t dataLength = 0;
-	const byte *data = reinterpret_cast<const byte *>( LUA->GetString( 1, &dataLength ) );
+	const uint8_t *data = reinterpret_cast<const uint8_t *>( LUA->GetString( 1, &dataLength ) );
 
 	try
 	{
@@ -79,7 +77,7 @@ LUA_FUNCTION( lAESEncrypt )
 	LUA->CheckType( 3, GarrysMod::Lua::Type::STRING );
 
 	size_t keyLen = 0;
-	const byte *key = reinterpret_cast<const byte *>( LUA->GetString( 2, &keyLen ) );
+	const uint8_t *key = reinterpret_cast<const uint8_t *>( LUA->GetString( 2, &keyLen ) );
 	if( keyLen != 16 && keyLen != 24 && keyLen != 32 )
 	{
 		LUA->ThrowError( "invalid key length supplied" );
@@ -87,7 +85,7 @@ LUA_FUNCTION( lAESEncrypt )
 	}
 
 	size_t ivLen = 0;
-	const byte *iv = reinterpret_cast<const byte *>( LUA->GetString( 3, &ivLen ) );
+	const uint8_t *iv = reinterpret_cast<const uint8_t *>( LUA->GetString( 3, &ivLen ) );
 	if( ivLen != 16 && ivLen != 24 && ivLen != 32 )
 	{
 		LUA->ThrowError( "invalid IV length supplied" );
@@ -95,7 +93,7 @@ LUA_FUNCTION( lAESEncrypt )
 	}
 
 	size_t dataLength = 0;
-	const byte *data = reinterpret_cast<const byte *>( LUA->GetString( 1, &dataLength ) );
+	const uint8_t *data = reinterpret_cast<const uint8_t *>( LUA->GetString( 1, &dataLength ) );
 
 	try
 	{
@@ -127,7 +125,7 @@ LUA_FUNCTION( lAESDecrypt )
 	LUA->CheckType( 3, GarrysMod::Lua::Type::STRING );
 
 	size_t keyLen = 0;
-	const byte *key = reinterpret_cast<const byte *>( LUA->GetString( 2, &keyLen ) );
+	const uint8_t *key = reinterpret_cast<const uint8_t *>( LUA->GetString( 2, &keyLen ) );
 	if( keyLen != 16 && keyLen != 24 && keyLen != 32 )
 	{
 		LUA->ThrowError( "invalid key length supplied" );
@@ -135,7 +133,7 @@ LUA_FUNCTION( lAESDecrypt )
 	}
 
 	size_t ivLen = 0;
-	const byte *iv = reinterpret_cast<const byte *>( LUA->GetString( 3, &ivLen ) );
+	const uint8_t *iv = reinterpret_cast<const uint8_t *>( LUA->GetString( 3, &ivLen ) );
 	if( ivLen != 16 && ivLen != 24 && ivLen != 32 )
 	{
 		LUA->ThrowError( "invalid IV length supplied" );
@@ -143,7 +141,7 @@ LUA_FUNCTION( lAESDecrypt )
 	}
 
 	size_t dataLength = 0;
-	const byte *data = reinterpret_cast<const byte *>( LUA->GetString( 1, &dataLength ) );
+	const uint8_t *data = reinterpret_cast<const uint8_t *>( LUA->GetString( 1, &dataLength ) );
 
 	try
 	{
@@ -207,10 +205,10 @@ LUA_FUNCTION( lRSAEncrypt )
 	LUA->CheckType( 2, GarrysMod::Lua::Type::STRING );
 
 	size_t dataLength = 0;
-	const byte *data = reinterpret_cast<const byte *>( LUA->GetString( 1, &dataLength ) );
+	const uint8_t *data = reinterpret_cast<const uint8_t *>( LUA->GetString( 1, &dataLength ) );
 
 	size_t publicKeyLen = 0;
-	const byte *publicKey = reinterpret_cast<const byte *>( LUA->GetString( 2, &publicKeyLen ) );
+	const uint8_t *publicKey = reinterpret_cast<const uint8_t *>( LUA->GetString( 2, &publicKeyLen ) );
 
 	try
 	{
@@ -246,10 +244,10 @@ LUA_FUNCTION( lRSADecrypt )
 	LUA->CheckType( 2, GarrysMod::Lua::Type::STRING );
 
 	size_t dataLength = 0;
-	const byte *data = reinterpret_cast<const byte *>( LUA->GetString( 1, &dataLength ) );
+	const uint8_t *data = reinterpret_cast<const uint8_t *>( LUA->GetString( 1, &dataLength ) );
 
 	size_t privateKeyLen = 0;
-	const byte *privateKey = reinterpret_cast<const byte *>( LUA->GetString( 2, &privateKeyLen ) );
+	const uint8_t *privateKey = reinterpret_cast<const uint8_t *>( LUA->GetString( 2, &privateKeyLen ) );
 
 	try
 	{
@@ -279,44 +277,44 @@ LUA_FUNCTION( lRSADecrypt )
 	return LUA_ERROR( );
 }
 
-#define HashFunc( funcName, hashType )												\
-LUA_FUNCTION( funcName )															\
-{																					\
-	LUA->CheckType( 1, GarrysMod::Lua::Type::STRING );								\
-	if( LUA->Top( ) > 1 )															\
-		LUA->CheckType( 2, GarrysMod::Lua::Type::BOOL );							\
-																					\
-	size_t len = 0;																	\
-	const byte *in = reinterpret_cast<const byte *>( LUA->GetString( 1, &len ) );	\
-																					\
-	bool errored = false;															\
-	byte out[CryptoPP::hashType::DIGESTSIZE];										\
-	try																				\
-	{																				\
-		CryptoPP::hashType( ).CalculateDigest( out, in, len );						\
-	}																				\
-	catch( std::exception &e )														\
-	{																				\
-		LUA->PushString( e.what( ) );												\
-		errored = true;																\
-	}																				\
-																					\
-	if( errored )																	\
-		return LUA_ERROR( );														\
-																					\
-	if( LUA->GetBool( ) )															\
-	{																				\
+#define HashFunc( hashType )															\
+LUA_FUNCTION( l ## hashType )															\
+{																						\
+	LUA->CheckType( 1, GarrysMod::Lua::Type::STRING );									\
+	if( LUA->Top( ) > 1 )																\
+		LUA->CheckType( 2, GarrysMod::Lua::Type::BOOL );								\
+																						\
+	size_t len = 0;																		\
+	const uint8_t *in = reinterpret_cast<const uint8_t *>( LUA->GetString( 1, &len ) );	\
+																						\
+	bool errored = false;																\
+	uint8_t out[CryptoPP::hashType::DIGESTSIZE];										\
+	try																					\
+	{																					\
+		CryptoPP::hashType( ).CalculateDigest( out, in, len );							\
+	}																					\
+	catch( std::exception &e )															\
+	{																					\
+		LUA->PushString( e.what( ) );													\
+		errored = true;																	\
+	}																					\
+																						\
+	if( errored )																		\
+		return LUA_ERROR( );															\
+																						\
+	if( LUA->GetBool( ) )																\
+	{																					\
 		LUA->PushString( reinterpret_cast<const char *>( out ), CryptoPP::hashType::DIGESTSIZE );	\
-		return 1;																	\
-	}																				\
-																					\
-	std::string hexOut;																\
-	CryptoPP::StringSource( out, CryptoPP::hashType::DIGESTSIZE, true,				\
-		new CryptoPP::HexEncoder( new CryptoPP::StringSink( hexOut ) )				\
-	);																				\
-																					\
-	LUA->PushString( hexOut.c_str( ), hexOut.size( ) );								\
-	return 1;																		\
+		return 1;																		\
+	}																					\
+																						\
+	std::string hexOut;																	\
+	CryptoPP::StringSource( out, CryptoPP::hashType::DIGESTSIZE, true,					\
+		new CryptoPP::HexEncoder( new CryptoPP::StringSink( hexOut ) )					\
+	);																					\
+																						\
+	LUA->PushString( hexOut.c_str( ), hexOut.size( ) );									\
+	return 1;																			\
 }
 
 static const unsigned short wCRCTable[] = {
@@ -359,9 +357,9 @@ LUA_FUNCTION( lCRC16 )
 	LUA->CheckType( 1, GarrysMod::Lua::Type::STRING );
 
 	size_t wLength = 0;
-	const byte *nData = reinterpret_cast<const byte *>( LUA->GetString( 1, &wLength ) );
+	const uint8_t *nData = reinterpret_cast<const uint8_t *>( LUA->GetString( 1, &wLength ) );
 
-	byte nTemp;
+	uint8_t nTemp;
 	unsigned short wCRCWord = 0;
 	while( wLength-- )
 	{
@@ -371,7 +369,7 @@ LUA_FUNCTION( lCRC16 )
 	}
 
 	std::string hexOut;
-	CryptoPP::StringSource( reinterpret_cast<const byte *>( wCRCWord ), 2, true,
+	CryptoPP::StringSource( reinterpret_cast<const uint8_t *>( wCRCWord ), 2, true,
 		new CryptoPP::HexEncoder( new CryptoPP::StringSink( hexOut ) )
 	);
 
@@ -379,30 +377,30 @@ LUA_FUNCTION( lCRC16 )
 	return 1;
 }
 
-#define SetCryptFunc( name, funcName )	\
-	LUA->PushCFunction( funcName );		\
+#define SetCryptFunc( name, hashType )		\
+	LUA->PushCFunction( l ## hashType );	\
 	LUA->SetField( -2, name );
 
-HashFunc( lCRC32, CRC32 );
+HashFunc( CRC32 );
 
-HashFunc( lSha1, SHA1 );
-HashFunc( lSha256, SHA256 );
-HashFunc( lSha224, SHA224 );
-HashFunc( lSha384, SHA384 );
-HashFunc( lSha512, SHA512 );
+HashFunc( SHA1 );
+HashFunc( SHA256 );
+HashFunc( SHA224 );
+HashFunc( SHA384 );
+HashFunc( SHA512 );
 
-HashFunc( lTiger, Tiger );
+HashFunc( Tiger );
 
-HashFunc( lWhirlPool, Whirlpool );
+HashFunc( Whirlpool );
 
-HashFunc( lMd2, Weak::MD2 );
-HashFunc( lMd4, Weak::MD4 );
-HashFunc( lMd5, Weak::MD5 );
+HashFunc( MD2 );
+HashFunc( MD4 );
+HashFunc( MD5 );
 
-HashFunc( lRipeMod128, RIPEMD128 );
-HashFunc( lRipeMod160, RIPEMD160 );
-HashFunc( lRipeMod256, RIPEMD256 );
-HashFunc( lRipeMod320, RIPEMD320 );
+HashFunc( RIPEMD128 );
+HashFunc( RIPEMD160 );
+HashFunc( RIPEMD256 );
+HashFunc( RIPEMD320 );
 
 GMOD_MODULE_OPEN( )
 {
@@ -410,33 +408,36 @@ GMOD_MODULE_OPEN( )
 
 	LUA->CreateTable( );
 
-	SetCryptFunc( "crc16", lCRC16 );
-	SetCryptFunc( "crc32", lCRC32 );
+	SetCryptFunc( "crc16", CRC16 );
+	SetCryptFunc( "crc32", CRC32 );
 
-	SetCryptFunc( "sha1", lSha1 );
-	SetCryptFunc( "sha224", lSha224 );
-	SetCryptFunc( "sha238", lSha384 );
-	SetCryptFunc( "sha256", lSha256 );
-	SetCryptFunc( "sha512", lSha512 );
+	SetCryptFunc( "sha1", SHA1 );
+	SetCryptFunc( "sha224", SHA224 );
+	SetCryptFunc( "sha238", SHA384 );
+	SetCryptFunc( "sha256", SHA256 );
+	SetCryptFunc( "sha512", SHA512 );
 
-	SetCryptFunc( "md2", lMd2 );
-	SetCryptFunc( "md4", lMd4 );
-	SetCryptFunc( "md5", lMd5 );
+	SetCryptFunc( "tiger", Tiger );
+	SetCryptFunc( "whirlpool", Whirlpool );
 
-	SetCryptFunc( "ripeMod128", lRipeMod128 );
-	SetCryptFunc( "ripeMod160", lRipeMod160 );
-	SetCryptFunc( "ripeMod256", lRipeMod256 );
-	SetCryptFunc( "ripeMod320", lRipeMod320 );
+	SetCryptFunc( "md2", MD2 );
+	SetCryptFunc( "md4", MD4 );
+	SetCryptFunc( "md5", MD5 );
 
-	SetCryptFunc( "aesEncrypt", lAESEncrypt );
-	SetCryptFunc( "aesDecrypt", lAESDecrypt );
+	SetCryptFunc( "ripemd128", RIPEMD128 );
+	SetCryptFunc( "ripemd160", RIPEMD160 );
+	SetCryptFunc( "ripemd256", RIPEMD256 );
+	SetCryptFunc( "ripemd320", RIPEMD320 );
 
-	SetCryptFunc( "rsaGenerateKeyPair", lRSAGenKeyPair );
-	SetCryptFunc( "rsaEncrypt", lRSAEncrypt );
-	SetCryptFunc( "rsaDecrypt", lRSADecrypt );
+	SetCryptFunc( "aesEncrypt", AESEncrypt );
+	SetCryptFunc( "aesDecrypt", AESDecrypt );
 
-	SetCryptFunc( "base64Encode", lBase64Encode );
-	SetCryptFunc( "base64Decode", lBase64Decode );
+	SetCryptFunc( "rsaGenerateKeyPair", RSAGenKeyPair );
+	SetCryptFunc( "rsaEncrypt", RSAEncrypt );
+	SetCryptFunc( "rsaDecrypt", RSADecrypt );
+
+	SetCryptFunc( "base64Encode", Base64Encode );
+	SetCryptFunc( "base64Decode", Base64Decode );
 
 	LUA->SetField( -2, "crypt" );
 
