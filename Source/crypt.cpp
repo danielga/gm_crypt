@@ -1,5 +1,4 @@
 #include <GarrysMod/Lua/Interface.h>
-#include <cryptopp/base64.h>
 #include <cryptopp/crc.h>
 #include <cryptopp/sha.h>
 #include <cryptopp/tiger.h>
@@ -12,85 +11,266 @@
 #include <cryptopp/gcm.h>
 #include <cryptopp/rsa.h>
 #include <cryptopp/osrng.h>
-#include <cryptopp/hex.h>
+#include <cryptopp/eccrypto.h>
 #include <stdint.h>
+#include <stdio.h>
+#include <SymbolFinder.hpp>
+#include <vector>
 
-#define LUA_ERROR( ) ( LUA->ThrowError( LUA->GetString( ) ), 0 )
+#define THROW_ERROR( error ) ( LUA->ThrowError( error ), 0 )
+#define LUA_ERROR( ) THROW_ERROR( LUA->GetString( ) )
 
-LUA_FUNCTION( lBase64Encode )
+#define HASHER_METATABLE "Hasher"
+#define HASHER_TYPE 30
+
+#define GET_USERDATA( index ) reinterpret_cast<GarrysMod::Lua::UserData *>( LUA->GetUserdata( index ) )
+#define GET_HASHER( index ) reinterpret_cast<CryptoPP::HashTransformation *>( GET_USERDATA( index )->data )
+#define VALIDATE_HASHER( hasher ) if( hasher == 0 ) return THROW_ERROR( HASHER_METATABLE " object is not valid" )
+
+#if defined _WIN32
+
+#define snprintf _snprintf
+
+#endif
+
+typedef void ( *lua_getfenv_t )( lua_State *L, int index );
+lua_getfenv_t lua_getfenv = 0;
+
+typedef int ( *lua_setfenv_t )( lua_State *L, int index );
+lua_setfenv_t lua_setfenv = 0;
+
+class BaseObject
 {
-	LUA->CheckType( 1, GarrysMod::Lua::Type::STRING );
+public:
+	virtual void SetPrimaryKey( const std::string &priKey ) = 0;
+	virtual std::string GenerateSecondaryKey( const std::string &priKey ) = 0;
+	virtual void SetSecondaryKey( const std::string &secKey ) = 0;
+	virtual std::string Decrypt( const std::string &data ) = 0;
+	virtual std::string Encrypt( const std::string &data ) = 0;
+};
 
-	size_t dataLength = 0;
-	const uint8_t *data = reinterpret_cast<const uint8_t *>( LUA->GetString( 1, &dataLength ) );
-
-	try
+class AESObject : public BaseObject
+{
+public:
+	void SetPrimaryKey( const std::string &priKey )
 	{
-		std::string encoded;
-		CryptoPP::StringSource( data, dataLength, true,
-			new CryptoPP::Base64Encoder(
-				new CryptoPP::StringSink( encoded ), false
+		size_t keySize = priKey.size( );
+		if( keySize != 16 && keySize != 24 && keySize != 32 )
+			return;
+
+		const uint8_t *keyData = reinterpret_cast<const uint8_t *>( priKey.c_str( ) );
+
+		decryptor.SetKey( keyData, keySize );
+		encryptor.SetKey( keyData, keySize );
+	}
+
+	std::string GenerateSecondaryKey( const std::string &priKey )
+	{
+		return std::string( );
+	}
+
+	void SetSecondaryKey( const std::string &secKey )
+	{
+		size_t ivSize = secKey.size( );
+		if( ivSize != 16 && ivSize != 24 && ivSize != 32 )
+			return;
+
+		const uint8_t *ivData = reinterpret_cast<const uint8_t *>( secKey.c_str( ) );
+
+		decryptor.Resynchronize( ivData, ivSize );
+		encryptor.Resynchronize( ivData, ivSize );
+	}
+
+	std::string Decrypt( const std::string &data )
+	{
+		std::string decrypted;
+		CryptoPP::StringSource(
+			data, true,
+			new CryptoPP::StreamTransformationFilter(
+				decryptor,
+				new CryptoPP::StringSink( decrypted )
 			)
 		);
 
-		LUA->PushString( encoded.c_str( ), encoded.size( ) );
-		return 1;
-	}
-	catch( std::exception &e )
-	{
-		LUA->PushString( e.what( ) );
+		return decrypted;
 	}
 
-	return LUA_ERROR( );
-}
-
-LUA_FUNCTION( lBase64Decode )
-{
-	LUA->CheckType( 1, GarrysMod::Lua::Type::STRING );
-
-	size_t dataLength = 0;
-	const uint8_t *data = reinterpret_cast<const uint8_t *>( LUA->GetString( 1, &dataLength ) );
-
-	try
+	std::string Encrypt( const std::string &data )
 	{
-		std::string decoded;
-		CryptoPP::StringSource( data, dataLength, true,
-			new CryptoPP::Base64Decoder(
-				new CryptoPP::StringSink( decoded )
+		std::string encrypted;
+		CryptoPP::StringSource(
+			data, true,
+			new CryptoPP::StreamTransformationFilter(
+				encryptor,
+				new CryptoPP::StringSink( encrypted )
 			)
 		);
 
-		LUA->PushString( decoded.c_str( ), decoded.size( ) );
-		return 1;
-	}
-	catch( std::exception &e )
-	{
-		LUA->PushString( e.what( ) );
+		return encrypted;
 	}
 
-	return LUA_ERROR( );
-}
+private:
+	CryptoPP::CBC_Mode<CryptoPP::AES>::Decryption decryptor;
+	CryptoPP::CBC_Mode<CryptoPP::AES>::Encryption encryptor;
+};
 
-LUA_FUNCTION( lAESEncrypt )
+class RSAObject : public BaseObject
 {
+public:
+	void SetPrimaryKey( const std::string &priKey )
+	{
+		CryptoPP::RSA::PublicKey privKey;
+		CryptoPP::StringSource stringSource( priKey, true );
+		privKey.Load( stringSource.Ref( ) );
+		decryptor.AccessKey( ).AssignFrom( privKey );
+	}
+
+	std::string GenerateSecondaryKey( const std::string &priKey )
+	{
+		CryptoPP::RSA::PublicKey privKey;
+		CryptoPP::StringSource stringSource( priKey, true );
+		privKey.Load( stringSource.Ref( ) );
+
+		CryptoPP::RSA::PublicKey pubKey;
+		pubKey.AssignFrom( privKey );
+		std::string publicKey;
+		CryptoPP::StringSink pubSink( publicKey );
+		pubKey.Save( pubSink.Ref( ) );
+		return publicKey;
+	}
+
+	void SetSecondaryKey( const std::string &secKey )
+	{
+		CryptoPP::RSA::PublicKey pubKey;
+		CryptoPP::StringSource stringSource( secKey, true );
+		pubKey.Load( stringSource.Ref( ) );
+		encryptor.AccessKey( ).AssignFrom( pubKey );
+	}
+
+	std::string Decrypt( const std::string &data )
+	{
+		CryptoPP::AutoSeededRandomPool rng;
+		std::string decrypted;
+		CryptoPP::StringSource(
+			data, true,
+			new CryptoPP::PK_DecryptorFilter(
+				rng, decryptor,
+				new CryptoPP::StringSink( decrypted )
+			)
+		);
+
+		return decrypted;
+	}
+
+	std::string Encrypt( const std::string &data )
+	{
+		CryptoPP::AutoSeededRandomPool rng;
+		std::string encrypted;
+		CryptoPP::StringSource(
+			data, true,
+			new CryptoPP::PK_EncryptorFilter(
+				rng, encryptor,
+				new CryptoPP::StringSink( encrypted )
+			)
+		);
+
+		return encrypted;
+	}
+
+private:
+	CryptoPP::RSAES_OAEP_SHA_Decryptor decryptor;
+	CryptoPP::RSAES_OAEP_SHA_Encryptor encryptor;
+};
+
+class ECCObject : public BaseObject
+{
+public:
+	void SetPrimaryKey( const std::string &priKey )
+	{
+		CryptoPP::ECIES<CryptoPP::ECP>::PrivateKey privKey;
+		CryptoPP::StringSource stringSource( priKey, true );
+		privKey.Load( stringSource.Ref( ) );
+		decryptor.AccessKey( ).AssignFrom( privKey );
+	}
+
+	std::string GenerateSecondaryKey( const std::string &priKey )
+	{
+		CryptoPP::ECIES<CryptoPP::ECP>::PrivateKey privKey;
+		CryptoPP::StringSource stringSource( priKey, true );
+		privKey.Load( stringSource.Ref( ) );
+
+		CryptoPP::ECIES<CryptoPP::ECP>::PublicKey pubKey;
+		pubKey.AssignFrom( privKey );
+		std::string publicKey;
+		CryptoPP::StringSink pubSink( publicKey );
+		pubKey.Save( pubSink.Ref( ) );
+		return publicKey;
+	}
+
+	void SetSecondaryKey( const std::string &secKey )
+	{
+		CryptoPP::ECIES<CryptoPP::ECP>::PublicKey pubKey;
+		CryptoPP::StringSource stringSource( secKey, true );
+		pubKey.Load( stringSource.Ref( ) );
+		encryptor.AccessKey( ).AssignFrom( pubKey );
+	}
+
+	std::string Decrypt( const std::string &data )
+	{
+		CryptoPP::AutoSeededRandomPool rng;
+		std::string decrypted;
+		CryptoPP::StringSource(
+			data, true,
+			new CryptoPP::PK_DecryptorFilter(
+				rng, decryptor,
+				new CryptoPP::StringSink( decrypted )
+			)
+		);
+
+		return decrypted;
+	}
+
+	std::string Encrypt( const std::string &data )
+	{
+		CryptoPP::AutoSeededRandomPool rng;
+		std::string encrypted;
+		CryptoPP::StringSource(
+			data, true,
+			new CryptoPP::PK_EncryptorFilter(
+				rng, encryptor,
+				new CryptoPP::StringSink( encrypted )
+			)
+		);
+
+		return encrypted;
+	}
+
+private:
+	CryptoPP::ECIES<CryptoPP::ECP>::Decryptor decryptor;
+	CryptoPP::ECIES<CryptoPP::ECP>::Encryptor encryptor;
+};
+
+LUA_FUNCTION_STATIC( aesEncrypt )
+{
+	bool hasIV = LUA->Top( ) > 2;
+
 	LUA->CheckType( 1, GarrysMod::Lua::Type::STRING );
 	LUA->CheckType( 2, GarrysMod::Lua::Type::STRING );
-	LUA->CheckType( 3, GarrysMod::Lua::Type::STRING );
+	if( hasIV )
+		LUA->CheckType( 3, GarrysMod::Lua::Type::STRING );
 
 	size_t keyLen = 0;
 	const uint8_t *key = reinterpret_cast<const uint8_t *>( LUA->GetString( 2, &keyLen ) );
 	if( keyLen != 16 && keyLen != 24 && keyLen != 32 )
-	{
-		LUA->ThrowError( "invalid key length supplied" );
-		return 0;
-	}
+		return THROW_ERROR( "invalid key length supplied" );
 
 	size_t ivLen = 0;
-	const uint8_t *iv = reinterpret_cast<const uint8_t *>( LUA->GetString( 3, &ivLen ) );
-	if( ivLen != 16 && ivLen != 24 && ivLen != 32 )
+	const uint8_t *iv = NULL;
+	if( hasIV )
 	{
-		LUA->ThrowError( "invalid IV length supplied" );
-		return 0;
+		iv = reinterpret_cast<const uint8_t *>( LUA->GetString( 3, &ivLen ) );
+		if( ivLen != 16 && ivLen != 24 && ivLen != 32 )
+			return THROW_ERROR( "invalid IV length supplied" );
 	}
 
 	size_t dataLength = 0;
@@ -99,11 +279,16 @@ LUA_FUNCTION( lAESEncrypt )
 	try
 	{
 		CryptoPP::CBC_Mode<CryptoPP::AES>::Encryption encryptor;
-		encryptor.SetKeyWithIV( key, keyLen, iv, ivLen );
+		if( hasIV )
+			encryptor.SetKeyWithIV( key, keyLen, iv, ivLen );
+		else
+			encryptor.SetKey( key, keyLen );
 
 		std::string encrypted;
-		CryptoPP::StringSource( data, dataLength, true,
-			new CryptoPP::StreamTransformationFilter( encryptor,
+		CryptoPP::StringSource(
+			data, dataLength, true,
+			new CryptoPP::StreamTransformationFilter(
+				encryptor,
 				new CryptoPP::StringSink( encrypted )
 			)
 		);
@@ -119,26 +304,27 @@ LUA_FUNCTION( lAESEncrypt )
 	return LUA_ERROR( );
 }
 
-LUA_FUNCTION( lAESDecrypt )
+LUA_FUNCTION_STATIC( aesDecrypt )
 {
+	bool hasIV = LUA->Top( ) > 2;
+
 	LUA->CheckType( 1, GarrysMod::Lua::Type::STRING );
 	LUA->CheckType( 2, GarrysMod::Lua::Type::STRING );
-	LUA->CheckType( 3, GarrysMod::Lua::Type::STRING );
+	if( hasIV )
+		LUA->CheckType( 3, GarrysMod::Lua::Type::STRING );
 
 	size_t keyLen = 0;
 	const uint8_t *key = reinterpret_cast<const uint8_t *>( LUA->GetString( 2, &keyLen ) );
 	if( keyLen != 16 && keyLen != 24 && keyLen != 32 )
-	{
-		LUA->ThrowError( "invalid key length supplied" );
-		return 0;
-	}
+		return THROW_ERROR( "invalid key length supplied" );
 
 	size_t ivLen = 0;
-	const uint8_t *iv = reinterpret_cast<const uint8_t *>( LUA->GetString( 3, &ivLen ) );
-	if( ivLen != 16 && ivLen != 24 && ivLen != 32 )
+	const uint8_t *iv = NULL;
+	if( hasIV )
 	{
-		LUA->ThrowError( "invalid IV length supplied" );
-		return 0;
+		iv = reinterpret_cast<const uint8_t *>( LUA->GetString( 3, &ivLen ) );
+		if( ivLen != 16 && ivLen != 24 && ivLen != 32 )
+			return THROW_ERROR( "invalid IV length supplied" );
 	}
 
 	size_t dataLength = 0;
@@ -147,11 +333,16 @@ LUA_FUNCTION( lAESDecrypt )
 	try
 	{
 		CryptoPP::CBC_Mode<CryptoPP::AES>::Decryption decryptor;
-		decryptor.SetKeyWithIV( key, keyLen, iv, ivLen );
+		if( hasIV )
+			decryptor.SetKeyWithIV( key, keyLen, iv, ivLen );
+		else
+			decryptor.SetKey( key, keyLen );
 
 		std::string decrypted;
-		CryptoPP::StringSource( data, dataLength, true,
-			new CryptoPP::StreamTransformationFilter( decryptor,
+		CryptoPP::StringSource(
+			data, dataLength, true,
+			new CryptoPP::StreamTransformationFilter(
+				decryptor,
 				new CryptoPP::StringSink( decrypted )
 			)
 		);
@@ -167,30 +358,29 @@ LUA_FUNCTION( lAESDecrypt )
 	return LUA_ERROR( );
 }
 
-LUA_FUNCTION( lRSAGenKeyPair )
+LUA_FUNCTION_STATIC( rsaGeneratePublicKey )
 {
-	LUA->CheckType( 1, GarrysMod::Lua::Type::NUMBER );
-	unsigned int size = static_cast<unsigned int>( LUA->GetNumber( 1 ) );
+	LUA->CheckType( 1, GarrysMod::Lua::Type::STRING );
+
+	size_t privateKeyLen = 0;
+	const uint8_t *privateKey = reinterpret_cast<const uint8_t *>( LUA->GetString( 1, &privateKeyLen ) );
 
 	try
 	{
-		CryptoPP::AutoSeededRandomPool rng;
-		CryptoPP::InvertibleRSAFunction func;
-		func.GenerateRandomWithKeySize( rng, size );
+		CryptoPP::RSA::PrivateKey privKey;
+		CryptoPP::ByteQueue queue;
+		queue.Put( privateKey, privateKeyLen );
+		queue.MessageEnd( );
+		privKey.Load( queue.Ref( ) );
 
-		CryptoPP::RSA::PrivateKey privKey( func );
-		std::string privateKey;
-		CryptoPP::StringSink privSink( privateKey );
-		privKey.Save( static_cast<CryptoPP::BufferedTransformation &>( privSink ) );
-
-		CryptoPP::RSA::PublicKey pubKey( func );
+		CryptoPP::RSA::PublicKey pubKey;
+		pubKey.AssignFrom( privKey );
 		std::string publicKey;
 		CryptoPP::StringSink pubSink( publicKey );
-		pubKey.Save( static_cast<CryptoPP::BufferedTransformation &>( pubSink ) );
+		pubKey.Save( pubSink.Ref( ) );
 
-		LUA->PushString( privateKey.c_str( ), privateKey.size( ) );
 		LUA->PushString( publicKey.c_str( ), publicKey.size( ) );
-		return 2;
+		return 1;
 	}
 	catch( std::exception &e )
 	{
@@ -200,7 +390,7 @@ LUA_FUNCTION( lRSAGenKeyPair )
 	return LUA_ERROR( );
 }
 
-LUA_FUNCTION( lRSAEncrypt )
+LUA_FUNCTION_STATIC( rsaEncrypt )
 {
 	LUA->CheckType( 1, GarrysMod::Lua::Type::STRING );
 	LUA->CheckType( 2, GarrysMod::Lua::Type::STRING );
@@ -217,15 +407,17 @@ LUA_FUNCTION( lRSAEncrypt )
 		CryptoPP::ByteQueue queue;
 		queue.Put( publicKey, publicKeyLen );
 		queue.MessageEnd( );
-		pubKey.Load( queue );
+		pubKey.Load( queue.Ref( ) );
 
-		std::string encrypted;
-		CryptoPP::RSAES_OAEP_SHA_Encryptor enc( pubKey );
 		CryptoPP::AutoSeededRandomPool rng;
-		CryptoPP::StringSource( data, dataLength, true,
-			new CryptoPP::PK_EncryptorFilter( static_cast<CryptoPP::RandomNumberGenerator &>( rng ), enc,
-				static_cast<CryptoPP::BufferedTransformation *>( new CryptoPP::StringSink( encrypted ) )
-		   )
+		CryptoPP::RSAES_OAEP_SHA_Encryptor enc( pubKey );
+		std::string encrypted;
+		CryptoPP::StringSource(
+			data, dataLength, true,
+			new CryptoPP::PK_EncryptorFilter(
+				rng, enc,
+				new CryptoPP::StringSink( encrypted )
+			)
 		);
 
 		LUA->PushString( encrypted.c_str( ), encrypted.size( ) );
@@ -239,7 +431,7 @@ LUA_FUNCTION( lRSAEncrypt )
 	return LUA_ERROR( );
 }
 
-LUA_FUNCTION( lRSADecrypt )
+LUA_FUNCTION_STATIC( rsaDecrypt )
 {
 	LUA->CheckType( 1, GarrysMod::Lua::Type::STRING );
 	LUA->CheckType( 2, GarrysMod::Lua::Type::STRING );
@@ -256,15 +448,17 @@ LUA_FUNCTION( lRSADecrypt )
 		CryptoPP::ByteQueue queue;
 		queue.Put( privateKey, privateKeyLen );
 		queue.MessageEnd( );
-		privKey.Load( queue );
+		privKey.Load( queue.Ref( ) );
 
-		std::string decrypted;
-		CryptoPP::RSAES_OAEP_SHA_Decryptor dec( privKey );
 		CryptoPP::AutoSeededRandomPool rng;
-		CryptoPP::StringSource( data, dataLength, true,
-			new CryptoPP::PK_DecryptorFilter( static_cast<CryptoPP::RandomNumberGenerator &>( rng ), dec,
-				static_cast<CryptoPP::BufferedTransformation *>( new CryptoPP::StringSink( decrypted ) )
-		   )
+		CryptoPP::RSAES_OAEP_SHA_Decryptor dec( privKey );
+		std::string decrypted;
+		CryptoPP::StringSource(
+			data, dataLength, true,
+			new CryptoPP::PK_DecryptorFilter(
+				rng, dec,
+				new CryptoPP::StringSink( decrypted )
+			)
 		);
 
 		LUA->PushString( decrypted.c_str( ), decrypted.size( ) );
@@ -278,167 +472,332 @@ LUA_FUNCTION( lRSADecrypt )
 	return LUA_ERROR( );
 }
 
-#define HashFunc( hashType )															\
-LUA_FUNCTION( l ## hashType )															\
-{																						\
-	LUA->CheckType( 1, GarrysMod::Lua::Type::STRING );									\
-	if( LUA->Top( ) > 1 )																\
-		LUA->CheckType( 2, GarrysMod::Lua::Type::BOOL );								\
-																						\
-	size_t len = 0;																		\
-	const uint8_t *in = reinterpret_cast<const uint8_t *>( LUA->GetString( 1, &len ) );	\
-																						\
-	bool errored = false;																\
-	uint8_t out[CryptoPP::hashType::DIGESTSIZE];										\
-	try																					\
-	{																					\
-		CryptoPP::hashType( ).CalculateDigest( out, in, len );							\
-	}																					\
-	catch( std::exception &e )															\
-	{																					\
-		LUA->PushString( e.what( ) );													\
-		errored = true;																	\
-	}																					\
-																						\
-	if( errored )																		\
-		return LUA_ERROR( );															\
-																						\
-	if( LUA->GetBool( ) )																\
-	{																					\
-		LUA->PushString( reinterpret_cast<const char *>( out ), CryptoPP::hashType::DIGESTSIZE );	\
-		return 1;																		\
-	}																					\
-																						\
-	std::string hexOut;																	\
-	CryptoPP::StringSource( out, CryptoPP::hashType::DIGESTSIZE, true,					\
-		new CryptoPP::HexEncoder( new CryptoPP::StringSink( hexOut ) )					\
-	);																					\
-																						\
-	LUA->PushString( hexOut.c_str( ), hexOut.size( ) );									\
-	return 1;																			\
-}
-
-static const unsigned short wCRCTable[] = {
-	0X0000, 0XC0C1, 0XC181, 0X0140, 0XC301, 0X03C0, 0X0280, 0XC241,
-	0XC601, 0X06C0, 0X0780, 0XC741, 0X0500, 0XC5C1, 0XC481, 0X0440,
-	0XCC01, 0X0CC0, 0X0D80, 0XCD41, 0X0F00, 0XCFC1, 0XCE81, 0X0E40,
-	0X0A00, 0XCAC1, 0XCB81, 0X0B40, 0XC901, 0X09C0, 0X0880, 0XC841,
-	0XD801, 0X18C0, 0X1980, 0XD941, 0X1B00, 0XDBC1, 0XDA81, 0X1A40,
-	0X1E00, 0XDEC1, 0XDF81, 0X1F40, 0XDD01, 0X1DC0, 0X1C80, 0XDC41,
-	0X1400, 0XD4C1, 0XD581, 0X1540, 0XD701, 0X17C0, 0X1680, 0XD641,
-	0XD201, 0X12C0, 0X1380, 0XD341, 0X1100, 0XD1C1, 0XD081, 0X1040,
-	0XF001, 0X30C0, 0X3180, 0XF141, 0X3300, 0XF3C1, 0XF281, 0X3240,
-	0X3600, 0XF6C1, 0XF781, 0X3740, 0XF501, 0X35C0, 0X3480, 0XF441,
-	0X3C00, 0XFCC1, 0XFD81, 0X3D40, 0XFF01, 0X3FC0, 0X3E80, 0XFE41,
-	0XFA01, 0X3AC0, 0X3B80, 0XFB41, 0X3900, 0XF9C1, 0XF881, 0X3840,
-	0X2800, 0XE8C1, 0XE981, 0X2940, 0XEB01, 0X2BC0, 0X2A80, 0XEA41,
-	0XEE01, 0X2EC0, 0X2F80, 0XEF41, 0X2D00, 0XEDC1, 0XEC81, 0X2C40,
-	0XE401, 0X24C0, 0X2580, 0XE541, 0X2700, 0XE7C1, 0XE681, 0X2640,
-	0X2200, 0XE2C1, 0XE381, 0X2340, 0XE101, 0X21C0, 0X2080, 0XE041,
-	0XA001, 0X60C0, 0X6180, 0XA141, 0X6300, 0XA3C1, 0XA281, 0X6240,
-	0X6600, 0XA6C1, 0XA781, 0X6740, 0XA501, 0X65C0, 0X6480, 0XA441,
-	0X6C00, 0XACC1, 0XAD81, 0X6D40, 0XAF01, 0X6FC0, 0X6E80, 0XAE41,
-	0XAA01, 0X6AC0, 0X6B80, 0XAB41, 0X6900, 0XA9C1, 0XA881, 0X6840,
-	0X7800, 0XB8C1, 0XB981, 0X7940, 0XBB01, 0X7BC0, 0X7A80, 0XBA41,
-	0XBE01, 0X7EC0, 0X7F80, 0XBF41, 0X7D00, 0XBDC1, 0XBC81, 0X7C40,
-	0XB401, 0X74C0, 0X7580, 0XB541, 0X7700, 0XB7C1, 0XB681, 0X7640,
-	0X7200, 0XB2C1, 0XB381, 0X7340, 0XB101, 0X71C0, 0X7080, 0XB041,
-	0X5000, 0X90C1, 0X9181, 0X5140, 0X9301, 0X53C0, 0X5280, 0X9241,
-	0X9601, 0X56C0, 0X5780, 0X9741, 0X5500, 0X95C1, 0X9481, 0X5440,
-	0X9C01, 0X5CC0, 0X5D80, 0X9D41, 0X5F00, 0X9FC1, 0X9E81, 0X5E40,
-	0X5A00, 0X9AC1, 0X9B81, 0X5B40, 0X9901, 0X59C0, 0X5880, 0X9841,
-	0X8801, 0X48C0, 0X4980, 0X8941, 0X4B00, 0X8BC1, 0X8A81, 0X4A40,
-	0X4E00, 0X8EC1, 0X8F81, 0X4F40, 0X8D01, 0X4DC0, 0X4C80, 0X8C41,
-	0X4400, 0X84C1, 0X8581, 0X4540, 0X8701, 0X47C0, 0X4680, 0X8641,
-	0X8201, 0X42C0, 0X4380, 0X8341, 0X4100, 0X81C1, 0X8081, 0X4040
-};
-
-LUA_FUNCTION( lCRC16 )
+LUA_FUNCTION_STATIC( hasher__tostring )
 {
-	LUA->CheckType( 1, GarrysMod::Lua::Type::STRING );
+	LUA->CheckType( 1, HASHER_TYPE );
 
-	size_t wLength = 0;
-	const uint8_t *nData = reinterpret_cast<const uint8_t *>( LUA->GetString( 1, &wLength ) );
-
-	uint8_t nTemp;
-	unsigned short wCRCWord = 0;
-	while( wLength-- )
-	{
-		nTemp = *nData++ ^ wCRCWord;
-		wCRCWord >>= 8;
-		wCRCWord ^= wCRCTable[nTemp];
-	}
-
-	std::string hexOut;
-	CryptoPP::StringSource( reinterpret_cast<const uint8_t *>( wCRCWord ), 2, true,
-		new CryptoPP::HexEncoder( new CryptoPP::StringSink( hexOut ) )
-	);
-
-	LUA->PushString( hexOut.c_str( ), hexOut.size( ) );
+	GarrysMod::Lua::UserData *userdata = GET_USERDATA( 1 );
+	char buffer[30];
+	snprintf( buffer, sizeof( buffer ), "%s: 0x%p", HASHER_METATABLE, userdata->data );
+	LUA->PushString( buffer );
 	return 1;
 }
 
-#define SetCryptFunc( name, hashType )		\
-	LUA->PushCFunction( l ## hashType );	\
+LUA_FUNCTION_STATIC( hasher__eq )
+{
+	LUA->CheckType( 1, HASHER_TYPE );
+	LUA->CheckType( 2, HASHER_TYPE );
+
+	LUA->PushBool( GET_USERDATA( 1 )->data == GET_USERDATA( 2 )->data );
+	return 1;
+}
+
+LUA_FUNCTION_STATIC( hasher__index )
+{
+	LUA->CheckType( 1, HASHER_TYPE );
+
+	LUA->CreateMetaTableType( HASHER_METATABLE, HASHER_TYPE );
+	LUA->Push( 2 );
+	LUA->RawGet( -2 );
+	if( !LUA->IsType( -1, GarrysMod::Lua::Type::NIL ) )
+		return 1;
+
+	LUA->Pop( 2 );
+
+	lua_getfenv( state, 1 );
+	LUA->Push( 2 );
+	LUA->RawGet( -2 );
+	return 1;
+}
+
+LUA_FUNCTION_STATIC( hasher__newindex )
+{
+	LUA->CheckType( 1, HASHER_TYPE );
+
+	lua_getfenv( state, 1 );
+	LUA->Push( 2 );
+	LUA->Push( 3 );
+	LUA->RawSet( -3 );
+	return 0;
+}
+
+LUA_FUNCTION_STATIC( hasher__gc )
+{
+	LUA->CheckType( 1, HASHER_TYPE );
+
+	GarrysMod::Lua::UserData *userdata = GET_USERDATA( 1 );
+	CryptoPP::HashTransformation *hasher = reinterpret_cast<CryptoPP::HashTransformation *>( userdata->data );
+	VALIDATE_HASHER( hasher );
+
+	userdata->data = 0;
+
+	try
+	{
+		delete hasher;
+		return 0;
+	}
+	catch( std::exception &e )
+	{
+		LUA->PushString( e.what( ) );
+	}
+
+	return LUA_ERROR( );
+}
+
+LUA_FUNCTION_STATIC( hasher_update )
+{
+	LUA->CheckType( 1, HASHER_TYPE );
+	LUA->CheckType( 2, GarrysMod::Lua::Type::STRING );
+
+	CryptoPP::HashTransformation *hasher = GET_HASHER( 1 );
+	VALIDATE_HASHER( hasher );
+
+	uint32_t len = 0;
+	const uint8_t *data = reinterpret_cast<const uint8_t *>( LUA->GetString( 2, &len ) );
+
+	try
+	{
+		hasher->Update( data, len );
+		return 0;
+	}
+	catch( std::exception &e )
+	{
+		LUA->PushString( e.what( ) );
+	}
+
+	return LUA_ERROR( );
+}
+
+LUA_FUNCTION_STATIC( hasher_final )
+{
+	LUA->CheckType( 1, HASHER_TYPE );
+
+	CryptoPP::HashTransformation *hasher = GET_HASHER( 1 );
+	VALIDATE_HASHER( hasher );
+
+	try
+	{
+		uint32_t size = hasher->DigestSize( );
+		std::vector<uint8_t> digest( size );
+		uint8_t *digestptr = &digest[0];
+
+		hasher->Final( digestptr );
+
+		LUA->PushString( reinterpret_cast<const char *>( digestptr ), size );
+		return 1;
+	}
+	catch( std::exception &e )
+	{
+		LUA->PushString( e.what( ) );
+	}
+
+	return LUA_ERROR( );
+}
+
+LUA_FUNCTION_STATIC( hasher_restart )
+{
+	LUA->CheckType( 1, HASHER_TYPE );
+
+	CryptoPP::HashTransformation *hasher = GET_HASHER( 1 );
+	VALIDATE_HASHER( hasher );
+
+	try
+	{
+		hasher->Restart( );
+		return 0;
+	}
+	catch( std::exception &e )
+	{
+		LUA->PushString( e.what( ) );
+	}
+
+	return LUA_ERROR( );
+}
+
+LUA_FUNCTION_STATIC( hasher_digest )
+{
+	LUA->CheckType( 1, HASHER_TYPE );
+	LUA->CheckType( 2, GarrysMod::Lua::Type::STRING );
+
+	CryptoPP::HashTransformation *hasher = GET_HASHER( 1 );
+	VALIDATE_HASHER( hasher );
+
+	uint32_t len = 0;
+	const uint8_t *data = reinterpret_cast<const uint8_t *>( LUA->GetString( 2, &len ) );
+
+	try
+	{
+		uint32_t size = hasher->DigestSize( );
+		std::vector<uint8_t> digest( size );
+		uint8_t *digestptr = &digest[0];
+
+		hasher->CalculateDigest( digestptr, data, len );
+
+		LUA->PushString( reinterpret_cast<const char *>( digestptr ), size );
+		return 1;
+	}
+	catch( std::exception &e )
+	{
+		LUA->PushString( e.what( ) );
+	}
+
+	return LUA_ERROR( );
+}
+
+LUA_FUNCTION_STATIC( hasher_name )
+{
+	LUA->CheckType( 1, HASHER_TYPE );
+
+	CryptoPP::HashTransformation *hasher = GET_HASHER( 1 );
+	VALIDATE_HASHER( hasher );
+
+	LUA->PushString( hasher->AlgorithmName( ).c_str( ) );
+	return 1;
+}
+
+LUA_FUNCTION_STATIC( hasher_size )
+{
+	LUA->CheckType( 1, HASHER_TYPE );
+
+	CryptoPP::HashTransformation *hasher = GET_HASHER( 1 );
+	VALIDATE_HASHER( hasher );
+
+	LUA->PushNumber( hasher->DigestSize( ) );
+	return 1;
+}
+
+LUA_FUNCTION_STATIC( hasher_blocksize )
+{
+	LUA->CheckType( 1, HASHER_TYPE );
+
+	CryptoPP::HashTransformation *hasher = GET_HASHER( 1 );
+	VALIDATE_HASHER( hasher );
+
+	LUA->PushNumber( hasher->OptimalBlockSize( ) );
+	return 1;
+}
+
+#define AddFunction( name, func )	\
+	LUA->PushCFunction( func );		\
 	LUA->SetField( -2, name );
 
-HashFunc( CRC32 );
+#define AddHashFunction( name, hashType )		\
+	LUA->PushCFunction( hash_ ## hashType );	\
+	LUA->SetField( -2, name );
 
-HashFunc( SHA1 );
-HashFunc( SHA256 );
-HashFunc( SHA224 );
-HashFunc( SHA384 );
-HashFunc( SHA512 );
+#define HashFunction( hashType )																	\
+LUA_FUNCTION_STATIC( hash_ ## hashType )															\
+{																									\
+	void *luadata = LUA->NewUserdata( sizeof( GarrysMod::Lua::UserData ) );							\
+	GarrysMod::Lua::UserData *userdata = reinterpret_cast<GarrysMod::Lua::UserData *>( luadata );	\
+	userdata->data = new CryptoPP::hashType( );														\
+	userdata->type = HASHER_TYPE;																	\
+																									\
+	LUA->CreateMetaTableType( HASHER_METATABLE, HASHER_TYPE );										\
+	LUA->SetMetaTable( -2 );																		\
+																									\
+	LUA->CreateTable( );																			\
+	lua_setfenv( state, -2 );																		\
+																									\
+	return 1;																						\
+}
 
-HashFunc( Tiger );
+HashFunction( CRC32 );
 
-HashFunc( Whirlpool );
+HashFunction( SHA1 );
+HashFunction( SHA224 );
+HashFunction( SHA256 );
+HashFunction( SHA384 );
+HashFunction( SHA512 );
 
-HashFunc( MD2 );
-HashFunc( MD4 );
-HashFunc( MD5 );
+HashFunction( Tiger );
 
-HashFunc( RIPEMD128 );
-HashFunc( RIPEMD160 );
-HashFunc( RIPEMD256 );
-HashFunc( RIPEMD320 );
+HashFunction( Whirlpool );
+
+HashFunction( MD2 );
+HashFunction( MD4 );
+HashFunction( MD5 );
+
+HashFunction( RIPEMD128 );
+HashFunction( RIPEMD160 );
+HashFunction( RIPEMD256 );
+HashFunction( RIPEMD320 );
 
 GMOD_MODULE_OPEN( )
 {
+	SymbolFinder symfinder;
+
+#if defined _WIN32
+
+	lua_getfenv = reinterpret_cast<lua_getfenv_t>( symfinder.FindSymbolFromBinary( "lua_shared.dll", "lua_getfenv" ) );
+	lua_setfenv = reinterpret_cast<lua_setfenv_t>( symfinder.FindSymbolFromBinary( "lua_shared.dll", "lua_setfenv" ) );
+
+#elif defined __linux
+
+	lua_getfenv = reinterpret_cast<lua_getfenv_t>( symfinder.FindSymbolFromBinary( "garrysmod/bin/lua_shared_srv.so", "lua_getfenv" ) );
+	lua_setfenv = reinterpret_cast<lua_setfenv_t>( symfinder.FindSymbolFromBinary( "garrysmod/bin/lua_shared_srv.so", "lua_setfenv" ) );
+
+#elif defined __APPLE__
+
+	lua_getfenv = reinterpret_cast<lua_getfenv_t>( symfinder.FindSymbolFromBinary( "garrysmod/bin/lua_shared.dylib", "_lua_getfenv" ) );
+	lua_setfenv = reinterpret_cast<lua_setfenv_t>( symfinder.FindSymbolFromBinary( "garrysmod/bin/lua_shared.dylib", "_lua_setfenv" ) );
+
+#endif
+
+	LUA->CreateMetaTableType( HASHER_METATABLE, HASHER_TYPE );
+
+	LUA->Push( -1 );
+	LUA->SetField( -2, "__metatable" );
+
+	AddFunction( "__tostring", hasher__tostring );
+	AddFunction( "__eq", hasher__eq );
+	AddFunction( "__index", hasher__index );
+	AddFunction( "__newindex", hasher__newindex );
+	AddFunction( "__gc", hasher__gc );
+
+	AddFunction( "Update", hasher_update );
+	AddFunction( "Final", hasher_final );
+	AddFunction( "Restart", hasher_restart );
+
+	AddFunction( "CalculateDigest", hasher_digest );
+
+	AddFunction( "AlgorythmName", hasher_name );
+	AddFunction( "DigestSize", hasher_size );
+	AddFunction( "OptimalBlockSize", hasher_blocksize );
+
+
+
 	LUA->PushSpecial( GarrysMod::Lua::SPECIAL_GLOB );
 
 	LUA->CreateTable( );
 
-	SetCryptFunc( "crc16", CRC16 );
-	SetCryptFunc( "crc32", CRC32 );
+	AddHashFunction( "crc32", CRC32 );
 
-	SetCryptFunc( "sha1", SHA1 );
-	SetCryptFunc( "sha224", SHA224 );
-	SetCryptFunc( "sha238", SHA384 );
-	SetCryptFunc( "sha256", SHA256 );
-	SetCryptFunc( "sha512", SHA512 );
+	AddHashFunction( "sha1", SHA1 );
+	AddHashFunction( "sha224", SHA224 );
+	AddHashFunction( "sha256", SHA256 );
+	AddHashFunction( "sha384", SHA384 );
+	AddHashFunction( "sha512", SHA512 );
 
-	SetCryptFunc( "tiger", Tiger );
-	SetCryptFunc( "whirlpool", Whirlpool );
+	AddHashFunction( "tiger", Tiger );
 
-	SetCryptFunc( "md2", MD2 );
-	SetCryptFunc( "md4", MD4 );
-	SetCryptFunc( "md5", MD5 );
+	AddHashFunction( "whirlpool", Whirlpool );
 
-	SetCryptFunc( "ripemd128", RIPEMD128 );
-	SetCryptFunc( "ripemd160", RIPEMD160 );
-	SetCryptFunc( "ripemd256", RIPEMD256 );
-	SetCryptFunc( "ripemd320", RIPEMD320 );
+	AddHashFunction( "md2", MD2 );
+	AddHashFunction( "md4", MD4 );
+	AddHashFunction( "md5", MD5 );
 
-	SetCryptFunc( "aesEncrypt", AESEncrypt );
-	SetCryptFunc( "aesDecrypt", AESDecrypt );
+	AddHashFunction( "ripemd128", RIPEMD128 );
+	AddHashFunction( "ripemd160", RIPEMD160 );
+	AddHashFunction( "ripemd256", RIPEMD256 );
+	AddHashFunction( "ripemd320", RIPEMD320 );
 
-	SetCryptFunc( "rsaGenerateKeyPair", RSAGenKeyPair );
-	SetCryptFunc( "rsaEncrypt", RSAEncrypt );
-	SetCryptFunc( "rsaDecrypt", RSADecrypt );
+	AddFunction( "aesEncrypt", aesEncrypt );
+	AddFunction( "aesDecrypt", aesDecrypt );
 
-	SetCryptFunc( "base64Encode", Base64Encode );
-	SetCryptFunc( "base64Decode", Base64Decode );
+	AddFunction( "rsaGeneratePublicKey", rsaGeneratePublicKey );
+	AddFunction( "rsaEncrypt", rsaEncrypt );
+	AddFunction( "rsaDecrypt", rsaDecrypt );
 
 	LUA->SetField( -2, "crypt" );
 

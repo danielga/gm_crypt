@@ -1,17 +1,17 @@
 GARRYSMOD_INCLUDES_PATH = "../gmod-module-base/include"
 PROJECT_FOLDER = os.get() .. "/" .. _ACTION
+SOURCE_FOLDER = "../Source/"
 
 solution("gm_crypt")
 	language("C++")
 	location(PROJECT_FOLDER)
-	flags({"NoPCH", "ExtraWarnings"})
 
 	if os.is("macosx") then
 		platforms({"Universal32"})
 	else
 		platforms({"x32"})
 	end
-
+--[[
 	configuration("windows")
 		includedirs({os.get() .. "/cryptopp/include"})
 		links({"cryptopp"})
@@ -24,7 +24,7 @@ solution("gm_crypt")
 
 	configuration("not windows")
 		linkoptions({"-Wl,-Bstatic,-lcryptopp,-Bdynamic"})
-
+]]
 	configurations({"Debug", "Release"})
 
 	configuration("Debug")
@@ -41,10 +41,12 @@ solution("gm_crypt")
 
 	project("gmsv_crypt")
 		kind("SharedLib")
+		flags({"NoPCH", "ExtraWarnings"})
 		defines({"CRYPT_SERVER", "GMMODULE"})
-		includedirs({GARRYSMOD_INCLUDES_PATH})
-		files({"../Source/*.cpp"})
-		vpaths({["Source files"] = "**.cpp"})
+		includedirs({SOURCE_FOLDER, GARRYSMOD_INCLUDES_PATH, "windows/cryptopp/include"})
+		files({SOURCE_FOLDER .. "*.hpp", SOURCE_FOLDER .. "*.cpp"})
+		vpaths({["Header files"] = "**.hpp", ["Source files"] = "**.cpp"})
+		links({"cryptopp"})
 		
 		targetprefix("gmsv_") -- Just to remove prefixes like lib from Linux
 		targetname("crypt")
@@ -62,10 +64,12 @@ solution("gm_crypt")
 
 	project("gmcl_crypt")
 		kind("SharedLib")
+		flags({"NoPCH", "ExtraWarnings"})
 		defines({"CRYPT_CLIENT", "GMMODULE"})
-		includedirs({GARRYSMOD_INCLUDES_PATH})
-		files({"../Source/*.cpp"})
-		vpaths({["Source files"] = "**.cpp"})
+		includedirs({SOURCE_FOLDER, GARRYSMOD_INCLUDES_PATH, "windows/cryptopp/include"})
+		files({SOURCE_FOLDER .. "*.hpp", SOURCE_FOLDER .. "*.cpp"})
+		vpaths({["Header files"] = "**.hpp", ["Source files"] = "**.cpp"})
+		links({"cryptopp"})
 
 		targetprefix("gmcl_") -- Just to remove prefixes like lib from Linux
 		targetname("crypt")
@@ -80,3 +84,10 @@ solution("gm_crypt")
 		configuration("macosx")
 			targetsuffix("_mac")
 			targetextension(".dll") -- Derp Garry, WHY
+
+	project("cryptopp")
+		kind("StaticLib")
+		defines({"USE_PRECOMPILED_HEADERS"})
+		includedirs({"windows/cryptopp/include/cryptopp", "windows/cryptopp/src"})
+		files({"windows/cryptopp/include/cryptopp/*.h", "windows/cryptopp/src/*.cpp"})
+		vpaths({["Header files"] = {"**.h"}, ["Source files"] = {"**.cpp"}})
