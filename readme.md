@@ -1,3 +1,11 @@
+gm_crypt
+========
+
+A cryptography module for the game Garry's Mod.
+
+Info
+-------
+
 Mac was not tested at all (sorry but I'm cheap and lazy).
 
 If stuff starts erroring or fails to work, be sure to check the correct line endings (\n and such) are present in the files for each OS.
