@@ -35,7 +35,7 @@ solution("gm_crypt")
 		defines({"GMMODULE", "CRYPT_SERVER"})
 		includedirs({
 			SOURCE_FOLDER,
-			GARRYSMOD_MODULE_BASE_FOLDER .. "/include"
+			GARRYSMOD_MODULE_BASE_FOLDER .. "/include",
 			SCANNING_FOLDER
 		})
 		files({
@@ -80,7 +80,7 @@ solution("gm_crypt")
 		defines({"GMMODULE", "CRYPT_CLIENT"})
 		includedirs({
 			SOURCE_FOLDER,
-			GARRYSMOD_MODULE_BASE_FOLDER .. "/include"
+			GARRYSMOD_MODULE_BASE_FOLDER .. "/include",
 			SCANNING_FOLDER
 		})
 		files({
