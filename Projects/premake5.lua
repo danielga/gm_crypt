@@ -4,6 +4,7 @@ newoption({
 })
 
 GARRYSMOD_MODULE_BASE_FOLDER = "../gmod-module-base"
+SCANNING_FOLDER = "../scanning"
 SOURCE_FOLDER = "../Source"
 CRYPTOPP_FOLDER = "../cryptopp"
 PROJECT_FOLDER = os.get() .. "/" .. _ACTION
@@ -35,14 +36,19 @@ solution("gm_crypt")
 		includedirs({
 			SOURCE_FOLDER,
 			GARRYSMOD_MODULE_BASE_FOLDER .. "/include"
+			SCANNING_FOLDER
 		})
 		files({
 			SOURCE_FOLDER .. "/*.cpp",
-			SOURCE_FOLDER .. "/*.hpp"
+			SOURCE_FOLDER .. "/*.hpp",
+			SCANNING_FOLDER .. "/SymbolFinder.cpp"
 		})
 		vpaths({
 			["Header files"] = SOURCE_FOLDER .. "/**.hpp",
-			["Source files"] = SOURCE_FOLDER .. "/**.cpp"
+			["Source files"] = {
+				SOURCE_FOLDER .. "/**.cpp",
+				SCANNING_FOLDER .. "/**.cpp"
+			}
 		})
 
 		filter({"options:not compile-cryptopp", "system:windows"})
@@ -75,14 +81,19 @@ solution("gm_crypt")
 		includedirs({
 			SOURCE_FOLDER,
 			GARRYSMOD_MODULE_BASE_FOLDER .. "/include"
+			SCANNING_FOLDER
 		})
 		files({
 			SOURCE_FOLDER .. "/*.cpp",
-			SOURCE_FOLDER .. "/*.hpp"
+			SOURCE_FOLDER .. "/*.hpp",
+			SCANNING_FOLDER .. "/SymbolFinder.cpp"
 		})
 		vpaths({
 			["Header files"] = SOURCE_FOLDER .. "/**.hpp",
-			["Source files"] = SOURCE_FOLDER .. "/**.cpp"
+			["Source files"] = {
+				SOURCE_FOLDER .. "/**.cpp",
+				SCANNING_FOLDER .. "/**.cpp"
+			}
 		})
 
 		filter({"options:not compile-cryptopp", "system:windows"})
