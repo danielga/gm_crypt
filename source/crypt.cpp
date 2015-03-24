@@ -14,7 +14,7 @@
 #include <cryptopp/eccrypto.h>
 #include <stdint.h>
 #include <stdio.h>
-#include <SymbolFinder.hpp>
+#include <symbolfinder.hpp>
 #include <vector>
 
 #define THROW_ERROR( error ) ( LUA->ThrowError( error ), 0 )

@@ -5,7 +5,7 @@ newoption({
 
 GARRYSMOD_MODULE_BASE_FOLDER = "../gmod-module-base"
 SCANNING_FOLDER = "../scanning"
-SOURCE_FOLDER = "../Source"
+SOURCE_FOLDER = "../source"
 CRYPTOPP_FOLDER = "../cryptopp"
 PROJECT_FOLDER = os.get() .. "/" .. _ACTION
 
@@ -22,13 +22,13 @@ solution("gm_crypt")
 	filter("configurations:Release")
 		optimize("On")
 		vectorextensions("SSE2")
-		objdir(PROJECT_FOLDER .. "/Intermediate")
-		targetdir(PROJECT_FOLDER .. "/Release")
+		objdir(PROJECT_FOLDER .. "/intermediate")
+		targetdir(PROJECT_FOLDER .. "/release")
 
 	filter("configurations:Debug")
 		flags({"Symbols"})
-		objdir(PROJECT_FOLDER .. "/Intermediate")
-		targetdir(PROJECT_FOLDER .. "/Debug")
+		objdir(PROJECT_FOLDER .. "/intermediate")
+		targetdir(PROJECT_FOLDER .. "/debug")
 
 	project("gmsv_crypt")
 		kind("SharedLib")
@@ -41,7 +41,7 @@ solution("gm_crypt")
 		files({
 			SOURCE_FOLDER .. "/*.cpp",
 			SOURCE_FOLDER .. "/*.hpp",
-			SCANNING_FOLDER .. "/SymbolFinder.cpp"
+			SCANNING_FOLDER .. "/symbolfinder.cpp"
 		})
 		vpaths({
 			["Header files"] = SOURCE_FOLDER .. "/**.hpp",
@@ -86,7 +86,7 @@ solution("gm_crypt")
 		files({
 			SOURCE_FOLDER .. "/*.cpp",
 			SOURCE_FOLDER .. "/*.hpp",
-			SCANNING_FOLDER .. "/SymbolFinder.cpp"
+			SCANNING_FOLDER .. "/symbolfinder.cpp"
 		})
 		vpaths({
 			["Header files"] = SOURCE_FOLDER .. "/**.hpp",
