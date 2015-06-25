@@ -1,128 +1,62 @@
 newoption({
+	trigger = "gmcommon",
+	description = "Sets the path to the garrysmod_common (https://bitbucket.org/danielga/garrysmod_common) directory",
+	value = "path to garrysmod_common dir"
+})
+
+newoption({
 	trigger = "compile-cryptopp",
 	description = "Compile cryptopp along with the modules"
 })
 
-GARRYSMOD_MODULE_BASE_FOLDER = "../gmod-module-base"
-SCANNING_FOLDER = "../scanning"
-SOURCE_FOLDER = "../source"
-CRYPTOPP_FOLDER = "../cryptopp"
-PROJECT_FOLDER = os.get() .. "/" .. _ACTION
+local gmcommon = _OPTIONS.gmcommon or os.getenv("GARRYSMOD_COMMON")
+if gmcommon == nil then
+	error("you didn't provide a path to your garrysmod_common (https://bitbucket.org/danielga/garrysmod_common) directory")
+end
 
-solution("gm_crypt")
-	language("C++")
-	location(PROJECT_FOLDER)
-	flags({"NoPCH", "StaticRuntime"})
-	platforms({"x86"})
-	configurations({"Release", "Debug"})
+include(gmcommon)
 
-	filter("platforms:x86")
-		architecture("x32")
+local CRYPTOPP_FOLDER = "../cryptopp"
 
-	filter("configurations:Release")
-		optimize("On")
-		vectorextensions("SSE2")
-		objdir(PROJECT_FOLDER .. "/intermediate")
-		targetdir(PROJECT_FOLDER .. "/release")
+CreateSolution("crypt")
+	warnings("Off")
 
-	filter("configurations:Debug")
-		flags({"Symbols"})
-		objdir(PROJECT_FOLDER .. "/intermediate")
-		targetdir(PROJECT_FOLDER .. "/debug")
+	CreateProject(SERVERSIDE)
+		IncludeLuaShared()
+		defines({"CRYPTOPP_ENABLE_NAMESPACE_WEAK=1"})
 
-	project("gmsv_crypt")
-		kind("SharedLib")
-		defines({"GMMODULE", "CRYPT_SERVER"})
-		includedirs({
-			SOURCE_FOLDER,
-			GARRYSMOD_MODULE_BASE_FOLDER .. "/include",
-			SCANNING_FOLDER
-		})
-		files({
-			SOURCE_FOLDER .. "/*.cpp",
-			SOURCE_FOLDER .. "/*.hpp",
-			SCANNING_FOLDER .. "/symbolfinder.cpp"
-		})
-		vpaths({
-			["Header files"] = SOURCE_FOLDER .. "/**.hpp",
-			["Source files"] = {
-				SOURCE_FOLDER .. "/**.cpp",
-				SCANNING_FOLDER .. "/**.cpp"
-			}
-		})
-
-		filter({"options:not compile-cryptopp", "system:windows"})
+		SetFilter({FILTER_WINDOWS, "options:not compile-cryptopp"})
 			includedirs({CRYPTOPP_FOLDER .. "/include"})
 			libdirs({CRYPTOPP_FOLDER .. "/lib"})
 			links({"cryptopp"})
 
-		filter({"options:not compile-cryptopp", "system:not windows"})
+		SetFilter({FILTER_LINUX, FILTER_MACOSX, "options:not compile-cryptopp"})
 			linkoptions({"-Wl,-Bstatic,-lcryptopp,-Bdynamic"})
 
-		filter({"options:compile-cryptopp"})
+		SetFilter({"options:compile-cryptopp"})
 			includedirs({CRYPTOPP_FOLDER .. "/include"})
 			links({"cryptopp"})
 
-		targetprefix("")
-		targetextension(".dll")
+	CreateProject(CLIENTSIDE)
+		IncludeLuaShared()
+		defines({"CRYPTOPP_ENABLE_NAMESPACE_WEAK=1"})
 
-		filter("system:windows")
-			targetsuffix("_win32")
-
-		filter("system:linux")
-			targetsuffix("_linux")
-
-		filter({"system:macosx"})
-			targetsuffix("_mac")
-
-	project("gmcl_crypt")
-		kind("SharedLib")
-		defines({"GMMODULE", "CRYPT_CLIENT"})
-		includedirs({
-			SOURCE_FOLDER,
-			GARRYSMOD_MODULE_BASE_FOLDER .. "/include",
-			SCANNING_FOLDER
-		})
-		files({
-			SOURCE_FOLDER .. "/*.cpp",
-			SOURCE_FOLDER .. "/*.hpp",
-			SCANNING_FOLDER .. "/symbolfinder.cpp"
-		})
-		vpaths({
-			["Header files"] = SOURCE_FOLDER .. "/**.hpp",
-			["Source files"] = {
-				SOURCE_FOLDER .. "/**.cpp",
-				SCANNING_FOLDER .. "/**.cpp"
-			}
-		})
-
-		filter({"options:not compile-cryptopp", "system:windows"})
+		SetFilter({FILTER_WINDOWS, "options:not compile-cryptopp"})
 			includedirs({CRYPTOPP_FOLDER .. "/include"})
 			libdirs({CRYPTOPP_FOLDER .. "/lib"})
 			links({"cryptopp"})
 
-		filter({"options:not compile-cryptopp", "system:not windows"})
+		SetFilter({FILTER_LINUX, FILTER_MACOSX, "options:not compile-cryptopp"})
 			linkoptions({"-Wl,-Bstatic,-lcryptopp,-Bdynamic"})
 
-		filter({"options:compile-cryptopp"})
+		SetFilter({"options:compile-cryptopp"})
 			includedirs({CRYPTOPP_FOLDER .. "/include"})
 			links({"cryptopp"})
-
-		targetprefix("")
-		targetextension(".dll")
-
-		filter("system:windows")
-			targetsuffix("_win32")
-
-		filter("system:linux")
-			targetsuffix("_linux")
-
-		filter({"system:macosx"})
-			targetsuffix("_mac")
 
 	if _OPTIONS["compile-cryptopp"] then
 		project("cryptopp")
 			kind("StaticLib")
+			warnings("Off")
 			defines({"USE_PRECOMPILED_HEADERS"})
 			includedirs({
 				CRYPTOPP_FOLDER .. "/include/cryptopp",

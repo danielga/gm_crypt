@@ -1,4 +1,6 @@
 #include <GarrysMod/Lua/Interface.h>
+#include <lua.hpp>
+#include <cstdint>
 #include <cryptopp/crc.h>
 #include <cryptopp/sha.h>
 #include <cryptopp/tiger.h>
@@ -12,32 +14,11 @@
 #include <cryptopp/rsa.h>
 #include <cryptopp/osrng.h>
 #include <cryptopp/eccrypto.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <symbolfinder.hpp>
+#include <string>
 #include <vector>
 
-#define THROW_ERROR( error ) ( LUA->ThrowError( error ), 0 )
-#define LUA_ERROR( ) THROW_ERROR( LUA->GetString( ) )
-
-#define HASHER_METATABLE "Hasher"
-#define HASHER_TYPE 30
-
-#define GET_USERDATA( index ) reinterpret_cast<GarrysMod::Lua::UserData *>( LUA->GetUserdata( index ) )
-#define GET_HASHER( index ) reinterpret_cast<CryptoPP::HashTransformation *>( GET_USERDATA( index )->data )
-#define VALIDATE_HASHER( hasher ) if( hasher == 0 ) return THROW_ERROR( HASHER_METATABLE " object is not valid" )
-
-#if defined _WIN32
-
-#define snprintf _snprintf
-
-#endif
-
-typedef void ( *lua_getfenv_t )( lua_State *L, int index );
-lua_getfenv_t lua_getfenv = 0;
-
-typedef int ( *lua_setfenv_t )( lua_State *L, int index );
-lua_setfenv_t lua_setfenv = 0;
+namespace crypt
+{
 
 class BaseObject
 {
@@ -262,7 +243,7 @@ LUA_FUNCTION_STATIC( aesEncrypt )
 	size_t keyLen = 0;
 	const uint8_t *key = reinterpret_cast<const uint8_t *>( LUA->GetString( 2, &keyLen ) );
 	if( keyLen != 16 && keyLen != 24 && keyLen != 32 )
-		return THROW_ERROR( "invalid key length supplied" );
+		LUA->ThrowError( "invalid key length supplied" );
 
 	size_t ivLen = 0;
 	const uint8_t *iv = NULL;
@@ -270,7 +251,7 @@ LUA_FUNCTION_STATIC( aesEncrypt )
 	{
 		iv = reinterpret_cast<const uint8_t *>( LUA->GetString( 3, &ivLen ) );
 		if( ivLen != 16 && ivLen != 24 && ivLen != 32 )
-			return THROW_ERROR( "invalid IV length supplied" );
+			LUA->ThrowError( "invalid IV length supplied" );
 	}
 
 	size_t dataLength = 0;
@@ -301,7 +282,8 @@ LUA_FUNCTION_STATIC( aesEncrypt )
 		LUA->PushString( e.what( ) );
 	}
 
-	return LUA_ERROR( );
+	LUA->ThrowError( LUA->GetString( -1 ) );
+	return 0;
 }
 
 LUA_FUNCTION_STATIC( aesDecrypt )
@@ -316,7 +298,7 @@ LUA_FUNCTION_STATIC( aesDecrypt )
 	size_t keyLen = 0;
 	const uint8_t *key = reinterpret_cast<const uint8_t *>( LUA->GetString( 2, &keyLen ) );
 	if( keyLen != 16 && keyLen != 24 && keyLen != 32 )
-		return THROW_ERROR( "invalid key length supplied" );
+		LUA->ThrowError( "invalid key length supplied" );
 
 	size_t ivLen = 0;
 	const uint8_t *iv = NULL;
@@ -324,7 +306,7 @@ LUA_FUNCTION_STATIC( aesDecrypt )
 	{
 		iv = reinterpret_cast<const uint8_t *>( LUA->GetString( 3, &ivLen ) );
 		if( ivLen != 16 && ivLen != 24 && ivLen != 32 )
-			return THROW_ERROR( "invalid IV length supplied" );
+			LUA->ThrowError( "invalid IV length supplied" );
 	}
 
 	size_t dataLength = 0;
@@ -355,7 +337,8 @@ LUA_FUNCTION_STATIC( aesDecrypt )
 		LUA->PushString( e.what( ) );
 	}
 
-	return LUA_ERROR( );
+	LUA->ThrowError( LUA->GetString( -1 ) );
+	return 0;
 }
 
 LUA_FUNCTION_STATIC( rsaGeneratePublicKey )
@@ -387,7 +370,8 @@ LUA_FUNCTION_STATIC( rsaGeneratePublicKey )
 		LUA->PushString( e.what( ) );
 	}
 
-	return LUA_ERROR( );
+	LUA->ThrowError( LUA->GetString( -1 ) );
+	return 0;
 }
 
 LUA_FUNCTION_STATIC( rsaEncrypt )
@@ -428,7 +412,8 @@ LUA_FUNCTION_STATIC( rsaEncrypt )
 		LUA->PushString( e.what( ) );
 	}
 
-	return LUA_ERROR( );
+	LUA->ThrowError( LUA->GetString( -1 ) );
+	return 0;
 }
 
 LUA_FUNCTION_STATIC( rsaDecrypt )
@@ -469,34 +454,82 @@ LUA_FUNCTION_STATIC( rsaDecrypt )
 		LUA->PushString( e.what( ) );
 	}
 
-	return LUA_ERROR( );
+	LUA->ThrowError( LUA->GetString( -1 ) );
+	return 0;
 }
 
-LUA_FUNCTION_STATIC( hasher__tostring )
+static void Initialize( lua_State *state )
 {
-	LUA->CheckType( 1, HASHER_TYPE );
+	LUA->PushCFunction( aesEncrypt );
+	LUA->SetField( -2, "aesEncrypt" );
 
-	GarrysMod::Lua::UserData *userdata = GET_USERDATA( 1 );
-	char buffer[30];
-	snprintf( buffer, sizeof( buffer ), "%s: 0x%p", HASHER_METATABLE, userdata->data );
-	LUA->PushString( buffer );
+	LUA->PushCFunction( aesDecrypt );
+	LUA->SetField( -2, "aesDecrypt" );
+
+	LUA->PushCFunction( rsaGeneratePublicKey );
+	LUA->SetField( -2, "rsaGeneratePublicKey" );
+
+	LUA->PushCFunction( rsaEncrypt );
+	LUA->SetField( -2, "rsaEncrypt" );
+
+	LUA->PushCFunction( rsaDecrypt );
+	LUA->SetField( -2, "rsaDecrypt" );
+}
+
+}
+
+namespace hasher
+{
+
+struct UserData
+{
+	CryptoPP::HashTransformation *data;
+	uint8_t type;
+};
+
+static const char *metaname = "Hasher";
+static const uint8_t metatype = 30;
+static const char *tablename = "crypt";
+static const char *invalid_error = "Hasher object is not valid";
+
+inline void CheckType( lua_State *state, int32_t index )
+{
+	if( !LUA->IsType( index, metatype ) )
+		luaL_typerror( state, index, metaname );
+}
+
+static UserData *GetUserData( lua_State *state, int32_t index )
+{
+	CheckType( state, index );
+	return static_cast<UserData *>( LUA->GetUserdata( index ) );
+}
+
+static CryptoPP::HashTransformation *Get( lua_State *state, int32_t index )
+{
+	CryptoPP::HashTransformation *hasher = static_cast<UserData *>( GetUserData( state, index ) )->data;
+	if( hasher == nullptr )
+		LUA->ArgError( index, invalid_error );
+
+	return hasher;
+}
+
+LUA_FUNCTION_STATIC( tostring )
+{
+	lua_pushfstring( state, "%s: 0x%p", metaname, Get( state, 1 ) );
 	return 1;
 }
 
-LUA_FUNCTION_STATIC( hasher__eq )
+LUA_FUNCTION_STATIC( eq )
 {
-	LUA->CheckType( 1, HASHER_TYPE );
-	LUA->CheckType( 2, HASHER_TYPE );
-
-	LUA->PushBool( GET_USERDATA( 1 )->data == GET_USERDATA( 2 )->data );
+	LUA->PushBool( Get( state, 1 ) == Get( state, 2 ) );
 	return 1;
 }
 
-LUA_FUNCTION_STATIC( hasher__index )
+LUA_FUNCTION_STATIC( index )
 {
-	LUA->CheckType( 1, HASHER_TYPE );
+	CheckType( state, 1 );
 
-	LUA->CreateMetaTableType( HASHER_METATABLE, HASHER_TYPE );
+	LUA->CreateMetaTableType( metaname, metatype );
 	LUA->Push( 2 );
 	LUA->RawGet( -2 );
 	if( !LUA->IsType( -1, GarrysMod::Lua::Type::NIL ) )
@@ -510,9 +543,9 @@ LUA_FUNCTION_STATIC( hasher__index )
 	return 1;
 }
 
-LUA_FUNCTION_STATIC( hasher__newindex )
+LUA_FUNCTION_STATIC( newindex )
 {
-	LUA->CheckType( 1, HASHER_TYPE );
+	CheckType( state, 1 );
 
 	lua_getfenv( state, 1 );
 	LUA->Push( 2 );
@@ -521,15 +554,14 @@ LUA_FUNCTION_STATIC( hasher__newindex )
 	return 0;
 }
 
-LUA_FUNCTION_STATIC( hasher__gc )
+LUA_FUNCTION_STATIC( gc )
 {
-	LUA->CheckType( 1, HASHER_TYPE );
+	UserData *userdata = GetUserData( state, 1 );
+	CryptoPP::HashTransformation *hasher = userdata->data;
+	if( hasher == nullptr )
+		return 0;
 
-	GarrysMod::Lua::UserData *userdata = GET_USERDATA( 1 );
-	CryptoPP::HashTransformation *hasher = reinterpret_cast<CryptoPP::HashTransformation *>( userdata->data );
-	VALIDATE_HASHER( hasher );
-
-	userdata->data = 0;
+	userdata->data = nullptr;
 
 	try
 	{
@@ -541,16 +573,14 @@ LUA_FUNCTION_STATIC( hasher__gc )
 		LUA->PushString( e.what( ) );
 	}
 
-	return LUA_ERROR( );
+	LUA->ThrowError( LUA->GetString( -1 ) );
+	return 0;
 }
 
-LUA_FUNCTION_STATIC( hasher_update )
+LUA_FUNCTION_STATIC( Update )
 {
-	LUA->CheckType( 1, HASHER_TYPE );
+	CryptoPP::HashTransformation *hasher = Get( state, 1 );
 	LUA->CheckType( 2, GarrysMod::Lua::Type::STRING );
-
-	CryptoPP::HashTransformation *hasher = GET_HASHER( 1 );
-	VALIDATE_HASHER( hasher );
 
 	uint32_t len = 0;
 	const uint8_t *data = reinterpret_cast<const uint8_t *>( LUA->GetString( 2, &len ) );
@@ -565,15 +595,13 @@ LUA_FUNCTION_STATIC( hasher_update )
 		LUA->PushString( e.what( ) );
 	}
 
-	return LUA_ERROR( );
+	LUA->ThrowError( LUA->GetString( -1 ) );
+	return 0;
 }
 
-LUA_FUNCTION_STATIC( hasher_final )
+LUA_FUNCTION_STATIC( Final )
 {
-	LUA->CheckType( 1, HASHER_TYPE );
-
-	CryptoPP::HashTransformation *hasher = GET_HASHER( 1 );
-	VALIDATE_HASHER( hasher );
+	CryptoPP::HashTransformation *hasher = Get( state, 1 );
 
 	try
 	{
@@ -591,15 +619,13 @@ LUA_FUNCTION_STATIC( hasher_final )
 		LUA->PushString( e.what( ) );
 	}
 
-	return LUA_ERROR( );
+	LUA->ThrowError( LUA->GetString( -1 ) );
+	return 0;
 }
 
-LUA_FUNCTION_STATIC( hasher_restart )
+LUA_FUNCTION_STATIC( Restart )
 {
-	LUA->CheckType( 1, HASHER_TYPE );
-
-	CryptoPP::HashTransformation *hasher = GET_HASHER( 1 );
-	VALIDATE_HASHER( hasher );
+	CryptoPP::HashTransformation *hasher = Get( state, 1 );
 
 	try
 	{
@@ -611,16 +637,14 @@ LUA_FUNCTION_STATIC( hasher_restart )
 		LUA->PushString( e.what( ) );
 	}
 
-	return LUA_ERROR( );
+	LUA->ThrowError( LUA->GetString( -1 ) );
+	return 0;
 }
 
-LUA_FUNCTION_STATIC( hasher_digest )
+LUA_FUNCTION_STATIC( Digest )
 {
-	LUA->CheckType( 1, HASHER_TYPE );
+	CryptoPP::HashTransformation *hasher = Get( state, 1 );
 	LUA->CheckType( 2, GarrysMod::Lua::Type::STRING );
-
-	CryptoPP::HashTransformation *hasher = GET_HASHER( 1 );
-	VALIDATE_HASHER( hasher );
 
 	uint32_t len = 0;
 	const uint8_t *data = reinterpret_cast<const uint8_t *>( LUA->GetString( 2, &len ) );
@@ -641,170 +665,163 @@ LUA_FUNCTION_STATIC( hasher_digest )
 		LUA->PushString( e.what( ) );
 	}
 
-	return LUA_ERROR( );
+	LUA->ThrowError( LUA->GetString( -1 ) );
+	return 0;
 }
 
-LUA_FUNCTION_STATIC( hasher_name )
+LUA_FUNCTION_STATIC( Name )
 {
-	LUA->CheckType( 1, HASHER_TYPE );
-
-	CryptoPP::HashTransformation *hasher = GET_HASHER( 1 );
-	VALIDATE_HASHER( hasher );
-
+	CryptoPP::HashTransformation *hasher = Get( state, 1 );
 	LUA->PushString( hasher->AlgorithmName( ).c_str( ) );
 	return 1;
 }
 
-LUA_FUNCTION_STATIC( hasher_size )
+LUA_FUNCTION_STATIC( Size )
 {
-	LUA->CheckType( 1, HASHER_TYPE );
-
-	CryptoPP::HashTransformation *hasher = GET_HASHER( 1 );
-	VALIDATE_HASHER( hasher );
-
+	CryptoPP::HashTransformation *hasher = Get( state, 1 );
 	LUA->PushNumber( hasher->DigestSize( ) );
 	return 1;
 }
 
-LUA_FUNCTION_STATIC( hasher_blocksize )
+LUA_FUNCTION_STATIC( BlockSize )
 {
-	LUA->CheckType( 1, HASHER_TYPE );
-
-	CryptoPP::HashTransformation *hasher = GET_HASHER( 1 );
-	VALIDATE_HASHER( hasher );
-
+	CryptoPP::HashTransformation *hasher = Get( state, 1 );
 	LUA->PushNumber( hasher->OptimalBlockSize( ) );
 	return 1;
 }
 
-#define AddFunction( name, func )	\
-	LUA->PushCFunction( func );		\
-	LUA->SetField( -2, name );
+template<typename Hasher>
+LUA_FUNCTION_STATIC( Function )
+{
+	void *luadata = LUA->NewUserdata( sizeof( UserData ) );
+	UserData *userdata = reinterpret_cast<UserData *>( luadata );
+	userdata->data = new Hasher( );
+	userdata->type = metatype;
 
-#define AddHashFunction( name, hashType )		\
-	LUA->PushCFunction( hash_ ## hashType );	\
-	LUA->SetField( -2, name );
+	LUA->CreateMetaTableType( metaname, metatype );
+	LUA->SetMetaTable( -2 );
 
-#define HashFunction( hashType )																	\
-LUA_FUNCTION_STATIC( hash_ ## hashType )															\
-{																									\
-	void *luadata = LUA->NewUserdata( sizeof( GarrysMod::Lua::UserData ) );							\
-	GarrysMod::Lua::UserData *userdata = reinterpret_cast<GarrysMod::Lua::UserData *>( luadata );	\
-	userdata->data = new CryptoPP::hashType( );														\
-	userdata->type = HASHER_TYPE;																	\
-																									\
-	LUA->CreateMetaTableType( HASHER_METATABLE, HASHER_TYPE );										\
-	LUA->SetMetaTable( -2 );																		\
-																									\
-	LUA->CreateTable( );																			\
-	lua_setfenv( state, -2 );																		\
-																									\
-	return 1;																						\
+	LUA->CreateTable( );
+	lua_setfenv( state, -2 );
+
+	return 1;
 }
 
-HashFunction( CRC32 );
-
-HashFunction( SHA1 );
-HashFunction( SHA224 );
-HashFunction( SHA256 );
-HashFunction( SHA384 );
-HashFunction( SHA512 );
-
-HashFunction( Tiger );
-
-HashFunction( Whirlpool );
-
-HashFunction( MD2 );
-HashFunction( MD4 );
-HashFunction( MD5 );
-
-HashFunction( RIPEMD128 );
-HashFunction( RIPEMD160 );
-HashFunction( RIPEMD256 );
-HashFunction( RIPEMD320 );
-
-GMOD_MODULE_OPEN( )
+static void Initialize( lua_State *state )
 {
-	SymbolFinder symfinder;
-
-#if defined _WIN32
-
-	lua_getfenv = reinterpret_cast<lua_getfenv_t>( symfinder.FindSymbolFromBinary( "lua_shared.dll", "lua_getfenv" ) );
-	lua_setfenv = reinterpret_cast<lua_setfenv_t>( symfinder.FindSymbolFromBinary( "lua_shared.dll", "lua_setfenv" ) );
-
-#elif defined __linux
-
-	lua_getfenv = reinterpret_cast<lua_getfenv_t>( symfinder.FindSymbolFromBinary( "garrysmod/bin/lua_shared_srv.so", "lua_getfenv" ) );
-	lua_setfenv = reinterpret_cast<lua_setfenv_t>( symfinder.FindSymbolFromBinary( "garrysmod/bin/lua_shared_srv.so", "lua_setfenv" ) );
-
-#elif defined __APPLE__
-
-	lua_getfenv = reinterpret_cast<lua_getfenv_t>( symfinder.FindSymbolFromBinary( "garrysmod/bin/lua_shared.dylib", "_lua_getfenv" ) );
-	lua_setfenv = reinterpret_cast<lua_setfenv_t>( symfinder.FindSymbolFromBinary( "garrysmod/bin/lua_shared.dylib", "_lua_setfenv" ) );
-
-#endif
-
-	LUA->CreateMetaTableType( HASHER_METATABLE, HASHER_TYPE );
+	LUA->CreateMetaTableType( metaname, metatype );
 
 	LUA->Push( -1 );
 	LUA->SetField( -2, "__metatable" );
 
-	AddFunction( "__tostring", hasher__tostring );
-	AddFunction( "__eq", hasher__eq );
-	AddFunction( "__index", hasher__index );
-	AddFunction( "__newindex", hasher__newindex );
-	AddFunction( "__gc", hasher__gc );
+	LUA->PushCFunction( tostring );
+	LUA->SetField( -2, "__tostring" );
 
-	AddFunction( "Update", hasher_update );
-	AddFunction( "Final", hasher_final );
-	AddFunction( "Restart", hasher_restart );
+	LUA->PushCFunction( eq );
+	LUA->SetField( -2, "__eq" );
 
-	AddFunction( "CalculateDigest", hasher_digest );
+	LUA->PushCFunction( index );
+	LUA->SetField( -2, "__index" );
 
-	AddFunction( "AlgorythmName", hasher_name );
-	AddFunction( "DigestSize", hasher_size );
-	AddFunction( "OptimalBlockSize", hasher_blocksize );
+	LUA->PushCFunction( newindex );
+	LUA->SetField( -2, "__newindex" );
 
+	LUA->PushCFunction( gc );
+	LUA->SetField( -2, "__gc" );
 
+	LUA->PushCFunction( Update );
+	LUA->SetField( -2, "Update" );
 
+	LUA->PushCFunction( Final );
+	LUA->SetField( -2, "Final" );
+
+	LUA->PushCFunction( Restart );
+	LUA->SetField( -2, "Restart" );
+
+	LUA->PushCFunction( Digest );
+	LUA->SetField( -2, "CalculateDigest" );
+
+	LUA->PushCFunction( Name );
+	LUA->SetField( -2, "AlgorythmName" );
+
+	LUA->PushCFunction( Size );
+	LUA->SetField( -2, "DigestSize" );
+
+	LUA->PushCFunction( BlockSize );
+	LUA->SetField( -2, "OptimalBlockSize" );
+
+	LUA->Pop( 1 );
+
+	LUA->PushCFunction( Function<CryptoPP::CRC32> );
+	LUA->SetField( -2, "crc32" );
+
+	LUA->PushCFunction( Function<CryptoPP::SHA1> );
+	LUA->SetField( -2, "sha1" );
+
+	LUA->PushCFunction( Function<CryptoPP::SHA224> );
+	LUA->SetField( -2, "sha224" );
+
+	LUA->PushCFunction( Function<CryptoPP::SHA256> );
+	LUA->SetField( -2, "sha256" );
+
+	LUA->PushCFunction( Function<CryptoPP::SHA384> );
+	LUA->SetField( -2, "sha384" );
+
+	LUA->PushCFunction( Function<CryptoPP::SHA512> );
+	LUA->SetField( -2, "sha512" );
+
+	LUA->PushCFunction( Function<CryptoPP::Tiger> );
+	LUA->SetField( -2, "tiger" );
+
+	LUA->PushCFunction( Function<CryptoPP::Whirlpool> );
+	LUA->SetField( -2, "whirlpool" );
+
+	LUA->PushCFunction( Function<CryptoPP::Weak::MD2> );
+	LUA->SetField( -2, "md2" );
+
+	LUA->PushCFunction( Function<CryptoPP::Weak::MD4> );
+	LUA->SetField( -2, "md4" );
+
+	LUA->PushCFunction( Function<CryptoPP::Weak::MD5> );
+	LUA->SetField( -2, "md5" );
+
+	LUA->PushCFunction( Function<CryptoPP::RIPEMD128> );
+	LUA->SetField( -2, "ripemd128" );
+
+	LUA->PushCFunction( Function<CryptoPP::RIPEMD160> );
+	LUA->SetField( -2, "ripemd160" );
+
+	LUA->PushCFunction( Function<CryptoPP::RIPEMD256> );
+	LUA->SetField( -2, "ripemd256" );
+
+	LUA->PushCFunction( Function<CryptoPP::RIPEMD320> );
+	LUA->SetField( -2, "ripemd320" );
+}
+
+}
+
+GMOD_MODULE_OPEN( )
+{
 	LUA->PushSpecial( GarrysMod::Lua::SPECIAL_GLOB );
 
 	LUA->CreateTable( );
 
-	AddHashFunction( "crc32", CRC32 );
-
-	AddHashFunction( "sha1", SHA1 );
-	AddHashFunction( "sha224", SHA224 );
-	AddHashFunction( "sha256", SHA256 );
-	AddHashFunction( "sha384", SHA384 );
-	AddHashFunction( "sha512", SHA512 );
-
-	AddHashFunction( "tiger", Tiger );
-
-	AddHashFunction( "whirlpool", Whirlpool );
-
-	AddHashFunction( "md2", MD2 );
-	AddHashFunction( "md4", MD4 );
-	AddHashFunction( "md5", MD5 );
-
-	AddHashFunction( "ripemd128", RIPEMD128 );
-	AddHashFunction( "ripemd160", RIPEMD160 );
-	AddHashFunction( "ripemd256", RIPEMD256 );
-	AddHashFunction( "ripemd320", RIPEMD320 );
-
-	AddFunction( "aesEncrypt", aesEncrypt );
-	AddFunction( "aesDecrypt", aesDecrypt );
-
-	AddFunction( "rsaGeneratePublicKey", rsaGeneratePublicKey );
-	AddFunction( "rsaEncrypt", rsaEncrypt );
-	AddFunction( "rsaDecrypt", rsaDecrypt );
+	crypt::Initialize( state );
+	hasher::Initialize( state );
 
 	LUA->SetField( -2, "crypt" );
 
+	LUA->Pop( 1 );
 	return 0;
 }
 
 GMOD_MODULE_CLOSE( )
 {
+	LUA->PushSpecial( GarrysMod::Lua::SPECIAL_GLOB );
+
+	LUA->PushNil( );
+	LUA->SetField( -2, "crypt" );
+
+	LUA->Pop( 1 );
 	return 0;
 }
