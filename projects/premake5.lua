@@ -56,7 +56,6 @@ CreateSolution("crypt")
 	if _OPTIONS["compile-cryptopp"] then
 		project("cryptopp")
 			kind("StaticLib")
-			warnings("Off")
 			defines({"USE_PRECOMPILED_HEADERS"})
 			includedirs({
 				CRYPTOPP_FOLDER .. "/include/cryptopp",
