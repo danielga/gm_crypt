@@ -10,11 +10,11 @@ GMOD_MODULE_OPEN( )
 
 	LUA->CreateTable( );
 
-	LUA->PushString( "1.0.0" );
+	LUA->PushString( "1.0.1" );
 	LUA->SetField( -2, "Version" );
 
 	// version num follows LuaJIT style, xx.yy.zz
-	LUA->PushNumber( 10000 );
+	LUA->PushNumber( 10001 );
 	LUA->SetField( -2, "VersionNum" );
 
 	crypt::Initialize( state );

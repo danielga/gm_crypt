@@ -739,19 +739,13 @@ LUA_FUNCTION_STATIC( Encrypt )
 template<typename Crypter>
 LUA_FUNCTION_STATIC( Creator )
 {
-	Crypter *crypter = nullptr;
-	try
-	{
-		crypter = new Crypter( );
-	}
-	catch( const CryptoPP::Exception &e )
+	Crypter *crypter = new( std::nothrow ) Crypter( );
+	if( crypter == nullptr )
 	{
 		LUA->PushNil( );
-		LUA->PushString( e.what( ) );
-	}
-
-	if( crypter == nullptr )
+		LUA->PushString( "failed to create object" );
 		return 2;
+	}
 
 	void *luadata = LUA->NewUserdata( sizeof( UserData ) );
 	UserData *userdata = reinterpret_cast<UserData *>( luadata );

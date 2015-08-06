@@ -244,19 +244,13 @@ LUA_FUNCTION_STATIC( Creator )
 			Hasher::StaticAlgorithmName( )
 		);
 
-	Hasher *hasher = nullptr;
-	try
-	{
-		hasher = new Hasher( );
-	}
-	catch( const CryptoPP::Exception &e )
+	Hasher *hasher = new( std::nothrow ) Hasher( );
+	if( hasher == nullptr )
 	{
 		LUA->PushNil( );
-		LUA->PushString( e.what( ) );
-	}
-
-	if( hasher == nullptr )
+		LUA->PushString( "failed to create object" );
 		return 2;
+	}
 
 	void *luadata = LUA->NewUserdata( sizeof( UserData ) );
 	UserData *userdata = reinterpret_cast<UserData *>( luadata );
