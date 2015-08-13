@@ -20,14 +20,15 @@ namespace hash
 
 struct UserData
 {
-	CryptoPP::HMAC_Base *hasher;
+	CryptoPP::HashTransformation *hasher;
 	uint8_t type;
-	bool ishmac;
+	CryptoPP::HMAC_Base *hmac;
 };
 
 static const char *metaname = "hasher";
 static const uint8_t metatype = 31;
 static const char *invalid_error = "invalid hasher";
+static const char *hmac_error = "this hasher doesn't support HMAC";
 
 inline void CheckType( lua_State *state, int32_t index )
 {
@@ -41,13 +42,26 @@ static UserData *GetUserData( lua_State *state, int32_t index )
 	return static_cast<UserData *>( LUA->GetUserdata( index ) );
 }
 
-static CryptoPP::HMAC_Base *Get( lua_State *state, int32_t index )
+static CryptoPP::HashTransformation *Get( lua_State *state, int32_t index )
 {
-	CryptoPP::HMAC_Base *hasher = GetUserData( state, index )->hasher;
+	CryptoPP::HashTransformation *hasher = GetUserData( state, index )->hasher;
 	if( hasher == nullptr )
 		LUA->ArgError( index, invalid_error );
 
 	return hasher;
+}
+
+static CryptoPP::HMAC_Base *GetHMAC( lua_State *state, int32_t index )
+{
+	UserData *udata = GetUserData( state, index );
+	if( udata->hasher == nullptr )
+		LUA->ArgError( index, invalid_error );
+
+	CryptoPP::HMAC_Base *hmac = udata->hmac;
+	if( hmac == nullptr )
+		LUA->ArgError( index, hmac_error );
+
+	return hmac;
 }
 
 LUA_FUNCTION_STATIC( tostring )
@@ -239,31 +253,31 @@ LUA_FUNCTION_STATIC( BlockSize )
 
 LUA_FUNCTION_STATIC( SupportsHMAC )
 {
-	LUA->PushBool( GetUserData( state, 1 )->ishmac );
+	LUA->PushBool( GetUserData( state, 1 )->hmac != nullptr );
 	return 1;
 }
 
 LUA_FUNCTION_STATIC( MinKeyLength )
 {
-	LUA->PushNumber( Get( state, 1 )->MinKeyLength( ) );
+	LUA->PushNumber( GetHMAC( state, 1 )->MinKeyLength( ) );
 	return 1;
 }
 
 LUA_FUNCTION_STATIC( MaxKeyLength )
 {
-	LUA->PushNumber( Get( state, 1 )->MaxKeyLength( ) );
+	LUA->PushNumber( GetHMAC( state, 1 )->MaxKeyLength( ) );
 	return 1;
 }
 
 LUA_FUNCTION_STATIC( DefaultKeyLength )
 {
-	LUA->PushNumber( Get( state, 1 )->DefaultKeyLength( ) );
+	LUA->PushNumber( GetHMAC( state, 1 )->DefaultKeyLength( ) );
 	return 1;
 }
 
 LUA_FUNCTION_STATIC( GetValidKeyLength )
 {
-	LUA->PushNumber( Get( state, 1 )->GetValidKeyLength(
+	LUA->PushNumber( GetHMAC( state, 1 )->GetValidKeyLength(
 		static_cast<size_t>( LUA->CheckNumber( 2 ) )
 	) );
 	return 1;
@@ -271,7 +285,7 @@ LUA_FUNCTION_STATIC( GetValidKeyLength )
 
 LUA_FUNCTION_STATIC( SetKey )
 {
-	CryptoPP::HMAC_Base *hasher = Get( state, 1 );
+	CryptoPP::HMAC_Base *hasher = GetHMAC( state, 1 );
 	LUA->CheckType( 2, GarrysMod::Lua::Type::STRING );
 
 	uint32_t keylen = 0;
@@ -294,7 +308,7 @@ LUA_FUNCTION_STATIC( SetKey )
 
 LUA_FUNCTION_STATIC( HMAC )
 {
-	CryptoPP::HMAC_Base *hasher = Get( state, 1 );
+	CryptoPP::HMAC_Base *hasher = GetHMAC( state, 1 );
 	LUA->CheckType( 2, GarrysMod::Lua::Type::STRING );
 
 	uint32_t datalen = 0;
@@ -322,7 +336,7 @@ LUA_FUNCTION_STATIC( HMAC )
 
 LUA_FUNCTION_STATIC( VerifyHMAC )
 {
-	CryptoPP::HMAC_Base *hasher = Get( state, 1 );
+	CryptoPP::HMAC_Base *hasher = GetHMAC( state, 1 );
 	LUA->CheckType( 2, GarrysMod::Lua::Type::STRING );
 	LUA->CheckType( 3, GarrysMod::Lua::Type::STRING );
 
@@ -375,7 +389,7 @@ LUA_FUNCTION_STATIC( CreatorCRC32 )
 	UserData *userdata = reinterpret_cast<UserData *>( luadata );
 	userdata->hasher = reinterpret_cast<CryptoPP::HMAC_Base *>( hasher );
 	userdata->type = metatype;
-	userdata->ishmac = false;
+	userdata->hmac = nullptr;
 
 	LUA->CreateMetaTableType( metaname, metatype );
 	LUA->SetMetaTable( -2 );
@@ -396,19 +410,28 @@ LUA_FUNCTION_STATIC( Creator )
 			Hasher::StaticAlgorithmName( )
 		);
 
+	Hasher *hasher = new( std::nothrow ) Hasher( );
+	if( hasher == nullptr )
+	{
+		LUA->PushNil( );
+		LUA->PushString( "failed to create hasher object" );
+		return 2;
+	}
+
 	CryptoPP::HMAC<Hasher> *hmac = new( std::nothrow ) CryptoPP::HMAC<Hasher>( );
 	if( hmac == nullptr )
 	{
+		delete hasher;
 		LUA->PushNil( );
-		LUA->PushString( "failed to create object" );
+		LUA->PushString( "failed to create HMAC object" );
 		return 2;
 	}
 
 	void *luadata = LUA->NewUserdata( sizeof( UserData ) );
 	UserData *userdata = reinterpret_cast<UserData *>( luadata );
-	userdata->hasher = hmac;
+	userdata->hasher = hasher;
 	userdata->type = metatype;
-	userdata->ishmac = true;
+	userdata->hmac = hmac;
 
 	LUA->CreateMetaTableType( metaname, metatype );
 	LUA->SetMetaTable( -2 );
