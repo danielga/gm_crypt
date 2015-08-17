@@ -1,4 +1,4 @@
-#include <hash.hpp>
+#include <hmac.hpp>
 #include <GarrysMod/Lua/Interface.h>
 #include <GarrysMod/Lua/LuaInterface.h>
 #include <lua.hpp>
@@ -12,19 +12,23 @@
 #include <cryptopp/md5.h>
 #include <cryptopp/whrlpool.h>
 #include <cryptopp/ripemd.h>
+#include <cryptopp/hmac.h>
+#include <cryptopp/osrng.h>
 
-namespace hash
+namespace hmac
 {
 
 struct UserData
 {
-	CryptoPP::HashTransformation *hasher;
+	CryptoPP::HMAC_Base *hmac;
 	uint8_t type;
+	CryptoPP::SecByteBlock *key;
 };
 
-static const char *metaname = "hasher";
-static const uint8_t metatype = 31;
-static const char *invalid_error = "invalid hasher";
+static const char *metaname = "hmac";
+static const uint8_t metatype = 32;
+static const char *invalid_error = "invalid hmac";
+static const char *table_name = "hmac";
 
 inline void CheckType( lua_State *state, int32_t index )
 {
@@ -38,13 +42,13 @@ static UserData *GetUserData( lua_State *state, int32_t index )
 	return static_cast<UserData *>( LUA->GetUserdata( index ) );
 }
 
-static CryptoPP::HashTransformation *Get( lua_State *state, int32_t index )
+static CryptoPP::HMAC_Base *Get( lua_State *state, int32_t index )
 {
-	CryptoPP::HashTransformation *hasher = GetUserData( state, index )->hasher;
-	if( hasher == nullptr )
+	CryptoPP::HMAC_Base *hmac = GetUserData( state, index )->hmac;
+	if( hmac == nullptr )
 		LUA->ArgError( index, invalid_error );
 
-	return hasher;
+	return hmac;
 }
 
 LUA_FUNCTION_STATIC( tostring )
@@ -101,15 +105,18 @@ LUA_FUNCTION_STATIC( newindex )
 LUA_FUNCTION_STATIC( gc )
 {
 	UserData *userdata = GetUserData( state, 1 );
-	CryptoPP::HashTransformation *hasher = userdata->hasher;
-	if( hasher == nullptr )
+	CryptoPP::HMAC_Base *hmac = userdata->hmac;
+	CryptoPP::SecByteBlock *key = userdata->key;
+	if( hmac == nullptr || key == nullptr )
 		return 0;
 
-	userdata->hasher = nullptr;
+	userdata->hmac = nullptr;
+	userdata->key = nullptr;
 
 	try
 	{
-		delete hasher;
+		delete hmac;
+		delete key;
 		return 0;
 	}
 	catch( const CryptoPP::Exception &e )
@@ -122,13 +129,13 @@ LUA_FUNCTION_STATIC( gc )
 
 LUA_FUNCTION_STATIC( IsValid )
 {
-	LUA->PushBool( GetUserData( state, 1 )->hasher != nullptr );
+	LUA->PushBool( GetUserData( state, 1 )->hmac != nullptr );
 	return 1;
 }
 
 LUA_FUNCTION_STATIC( Update )
 {
-	CryptoPP::HashTransformation *hasher = Get( state, 1 );
+	CryptoPP::HMAC_Base *hmac = Get( state, 1 );
 	LUA->CheckType( 2, GarrysMod::Lua::Type::STRING );
 
 	uint32_t len = 0;
@@ -136,7 +143,7 @@ LUA_FUNCTION_STATIC( Update )
 
 	try
 	{
-		hasher->Update( data, len );
+		hmac->Update( data, len );
 
 		LUA->PushBool( true );
 		return 1;
@@ -152,15 +159,15 @@ LUA_FUNCTION_STATIC( Update )
 
 LUA_FUNCTION_STATIC( Final )
 {
-	CryptoPP::HashTransformation *hasher = Get( state, 1 );
+	CryptoPP::HMAC_Base *hmac = Get( state, 1 );
 
 	try
 	{
-		uint32_t size = hasher->DigestSize( );
+		uint32_t size = hmac->DigestSize( );
 		std::vector<uint8_t> digest( size );
 		uint8_t *digestptr = digest.data( );
 
-		hasher->Final( digestptr );
+		hmac->Final( digestptr );
 
 		LUA->PushString( reinterpret_cast<char *>( digestptr ), size );
 		return 1;
@@ -176,11 +183,11 @@ LUA_FUNCTION_STATIC( Final )
 
 LUA_FUNCTION_STATIC( Restart )
 {
-	CryptoPP::HashTransformation *hasher = Get( state, 1 );
+	CryptoPP::HMAC_Base *hmac = Get( state, 1 );
 
 	try
 	{
-		hasher->Restart( );
+		hmac->Restart( );
 
 		LUA->PushBool( true );
 		return 1;
@@ -196,7 +203,7 @@ LUA_FUNCTION_STATIC( Restart )
 
 LUA_FUNCTION_STATIC( CalculateDigest )
 {
-	CryptoPP::HashTransformation *hasher = Get( state, 1 );
+	CryptoPP::HMAC_Base *hmac = Get( state, 1 );
 	LUA->CheckType( 2, GarrysMod::Lua::Type::STRING );
 
 	uint32_t len = 0;
@@ -204,11 +211,11 @@ LUA_FUNCTION_STATIC( CalculateDigest )
 
 	try
 	{
-		uint32_t size = hasher->DigestSize( );
+		uint32_t size = hmac->DigestSize( );
 		std::vector<uint8_t> digest( size );
 		uint8_t *digestptr = digest.data( );
 
-		hasher->CalculateDigest( digestptr, data, len );
+		hmac->CalculateDigest( digestptr, data, len );
 
 		LUA->PushString( reinterpret_cast<char *>( digestptr ), size );
 		return 1;
@@ -240,27 +247,115 @@ LUA_FUNCTION_STATIC( OptimalBlockSize )
 	return 1;
 }
 
+LUA_FUNCTION_STATIC( MinKeyLength )
+{
+	LUA->PushNumber( Get( state, 1 )->MinKeyLength( ) );
+	return 1;
+}
+
+LUA_FUNCTION_STATIC( MaxKeyLength )
+{
+	LUA->PushNumber( Get( state, 1 )->MaxKeyLength( ) );
+	return 1;
+}
+
+LUA_FUNCTION_STATIC( DefaultKeyLength )
+{
+	LUA->PushNumber( Get( state, 1 )->DefaultKeyLength( ) );
+	return 1;
+}
+
+LUA_FUNCTION_STATIC( GetValidKeyLength )
+{
+	LUA->PushNumber( Get( state, 1 )->GetValidKeyLength(
+		static_cast<size_t>( LUA->CheckNumber( 2 ) )
+	) );
+	return 1;
+}
+
+LUA_FUNCTION_STATIC( SetKey )
+{
+	UserData *udata = GetUserData( state, 1 );
+	if( udata->hmac == nullptr )
+		LUA->ArgError( 1, invalid_error );
+
+	LUA->CheckType( 2, GarrysMod::Lua::Type::STRING );
+
+	uint32_t keylen = 0;
+	const uint8_t *key = reinterpret_cast<const uint8_t *>( LUA->GetString( 2, &keylen ) );
+
+	try
+	{
+		udata->hmac->SetKey( key, keylen );
+		udata->key->Assign( key, keylen );
+		LUA->PushBool( true );
+		return 1;
+	}
+	catch( const CryptoPP::Exception &e )
+	{
+		LUA->PushNil( );
+		LUA->PushString( e.what( ) );
+	}
+
+	return 2;
+}
+
+LUA_FUNCTION_STATIC( GetKey )
+{
+	UserData *udata = GetUserData( state, 1 );
+	if( udata->hmac == nullptr )
+		LUA->ArgError( 1, invalid_error );
+
+	try
+	{
+		LUA->PushString( reinterpret_cast<char *>( udata->key->data( ) ), udata->key->size( ) );
+		return 1;
+	}
+	catch( const CryptoPP::Exception &e )
+	{
+		LUA->PushNil( );
+		LUA->PushString( e.what( ) );
+	}
+
+	return 2;
+}
+
 template<typename Hasher, bool Secure = true>
 LUA_FUNCTION_STATIC( Creator )
 {
 	// let's annoy everyone to force them to drop insecure algorithms
 	if( !Secure )
 		static_cast<GarrysMod::Lua::ILuaInterface *>( LUA )->ErrorNoHalt(
-			"[gm_crypt] %s hashing algorithm is considered insecure!\n",
+			"[gm_crypt] %s HMAC algorithm is considered insecure!\n",
 			Hasher::StaticAlgorithmName( )
 		);
 
-	Hasher *hasher = new( std::nothrow ) Hasher( );
-	if( hasher == nullptr )
+	CryptoPP::HMAC<Hasher> *hmac = new( std::nothrow ) CryptoPP::HMAC<Hasher>( );
+	if( hmac == nullptr )
 	{
 		LUA->PushNil( );
-		LUA->PushString( "failed to create object" );
+		LUA->PushString( "failed to create HMAC object" );
 		return 2;
 	}
 
+	CryptoPP::SecByteBlock *key = new( std::nothrow ) CryptoPP::SecByteBlock(
+		hmac->GetValidKeyLength( 16 )
+	);
+	if( key == nullptr )
+	{
+		delete hmac;
+		LUA->PushNil( );
+		LUA->PushString( "failed to create key object" );
+		return 2;
+	}
+
+	CryptoPP::AutoSeededRandomPool( ).GenerateBlock( key->data( ), key->size( ) );
+	hmac->SetKey( key->data( ), key->size( ) );
+
 	UserData *userdata = reinterpret_cast<UserData *>( LUA->NewUserdata( sizeof( UserData ) ) );
-	userdata->hasher = hasher;
+	userdata->hmac = hmac;
 	userdata->type = metatype;
+	userdata->key = key;
 
 	LUA->CreateMetaTableType( metaname, metatype );
 	LUA->SetMetaTable( -2 );
@@ -317,10 +412,27 @@ void Initialize( lua_State *state )
 	LUA->PushCFunction( OptimalBlockSize );
 	LUA->SetField( -2, "OptimalBlockSize" );
 
+	LUA->PushCFunction( MinKeyLength );
+	LUA->SetField( -2, "MinKeyLength" );
+
+	LUA->PushCFunction( MaxKeyLength );
+	LUA->SetField( -2, "MaxKeyLength" );
+
+	LUA->PushCFunction( DefaultKeyLength );
+	LUA->SetField( -2, "DefaultKeyLength" );
+
+	LUA->PushCFunction( GetValidKeyLength );
+	LUA->SetField( -2, "GetValidKeyLength" );
+
+	LUA->PushCFunction( SetKey );
+	LUA->SetField( -2, "SetKey" );
+
+	LUA->PushCFunction( GetKey );
+	LUA->SetField( -2, "GetKey" );
+
 	LUA->Pop( 1 );
 
-	LUA->PushCFunction( Creator<CryptoPP::CRC32> );
-	LUA->SetField( -2, "CRC32" );
+	LUA->CreateTable( );
 
 	LUA->PushCFunction( Creator<CryptoPP::SHA1> );
 	LUA->SetField( -2, "SHA1" );
@@ -363,6 +475,8 @@ void Initialize( lua_State *state )
 
 	LUA->PushCFunction( Creator<CryptoPP::RIPEMD320> );
 	LUA->SetField( -2, "RIPEMD320" );
+
+	LUA->SetField( -2, table_name );
 }
 
 void Deinitialize( lua_State *state )

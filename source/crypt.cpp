@@ -2,7 +2,7 @@
 #include <GarrysMod/Lua/Interface.h>
 #include <lua.hpp>
 #include <cstdint>
-#include <string>
+#include <vector>
 #include <cryptopp/aes.h>
 #include <cryptopp/gcm.h>
 #include <cryptopp/rsa.h>
@@ -12,26 +12,47 @@
 namespace crypt
 {
 
+typedef std::vector<uint8_t> bytes;
+typedef std::basic_string< uint8_t, std::char_traits<uint8_t>, std::allocator<uint8_t> > bytes_string;
+typedef CryptoPP::StringSinkTemplate<bytes_string> bytes_sink;
+
 class Crypter
 {
 public:
-	virtual bool GeneratePrimaryKey( uint32_t priSize, std::string &priKey, bool use ) = 0;
+	virtual std::string AlgorithmName( ) const = 0;
 
-	virtual bool SetPrimaryKey( const uint8_t *priKey, uint32_t priSize ) = 0;
+	virtual size_t MaxPlaintextLength( size_t length ) const = 0;
+
+	virtual size_t CiphertextLength( size_t length ) const = 0;
+
+	virtual size_t FixedMaxPlaintextLength( ) const = 0;
+
+	virtual size_t FixedCiphertextLength( ) const = 0;
+
+	virtual size_t GetValidPrimaryKeyLength( size_t length ) const = 0;
+
+	virtual bool GeneratePrimaryKey( size_t priSize, bytes &priKey, bool use ) = 0;
+
+	virtual bool SetPrimaryKey( const bytes &priKey ) = 0;
+
+	virtual bytes GetPrimaryKey( ) const = 0;
+
+	virtual size_t GetValidSecondaryKeyLength( size_t length ) const = 0;
 
 	virtual bool GenerateSecondaryKey(
-		const uint8_t *priKey,
-		uint32_t priSize,
-		uint32_t secSize,
-		std::string &secKey,
+		const bytes &priKey,
+		size_t secSize,
+		bytes &secKey,
 		bool use
 	) = 0;
 
-	virtual bool SetSecondaryKey( const uint8_t *secKey, uint32_t secSize ) = 0;
+	virtual bool SetSecondaryKey( const bytes &secKey ) = 0;
 
-	virtual bool Decrypt( const uint8_t *data, size_t len, std::string &decrypted ) = 0;
+	virtual bytes GetSecondaryKey( ) const = 0;
 
-	virtual bool Encrypt( const uint8_t *data, size_t len, std::string &encrypted ) = 0;
+	virtual bool Decrypt( const bytes &data, bytes &decrypted ) = 0;
+
+	virtual bool Encrypt( const bytes &data, bytes &encrypted ) = 0;
 
 	virtual const std::string &GetLastError( ) const = 0;
 };
@@ -39,146 +60,178 @@ public:
 class AES : public Crypter
 {
 public:
-	bool GeneratePrimaryKey( uint32_t priSize, std::string &priKey, bool use )
+	std::string AlgorithmName( ) const
 	{
-		if( priSize != 16 && priSize != 24 && priSize != 32 )
+		return encrypter.AlgorithmName( );
+	}
+
+	size_t MaxPlaintextLength( size_t length ) const
+	{
+		size_t remainder = length % 16;
+		if( remainder == 0 )
+			return length;
+
+		return length + 16 - remainder;
+	}
+
+	size_t CiphertextLength( size_t length ) const
+	{
+		size_t remainder = length % 16;
+		if( remainder == 0 )
+			return length;
+
+		return length + 16 - remainder;
+	}
+
+	size_t FixedMaxPlaintextLength( ) const
+	{
+		return 16;
+	}
+
+	size_t FixedCiphertextLength( ) const
+	{
+		return 16;
+	}
+
+	size_t GetValidPrimaryKeyLength( size_t length ) const
+	{
+		return encrypter.GetValidKeyLength( length );
+	}
+
+	bool GeneratePrimaryKey( size_t priSize, bytes &priKey, bool use )
+	{
+		if( !encrypter.IsValidKeyLength( priSize ) )
 			return false;
 
 		try
 		{
-			CryptoPP::AutoSeededRandomPool prng;
-
-			uint8_t key[32] = { 0 };
-			prng.GenerateBlock( key, priSize );
-
-			CryptoPP::StringSource( key, priSize, true, new CryptoPP::StringSink( priKey ) );
+			priKey.resize( priSize );
+			CryptoPP::AutoSeededRandomPool( ).GenerateBlock( priKey.data( ), priSize );
 
 			if( use )
-			{
-				decryptor.SetKey( key, priSize );
-				encryptor.SetKey( key, priSize );
-			}
+				SetKey( priKey );
+
+			return true;
 		}
 		catch( CryptoPP::Exception &e )
 		{
 			lasterror = e.GetWhat( );
-			return false;
 		}
 
-		return true;
+		return false;
 	}
 
-	bool SetPrimaryKey( const uint8_t *priKey, uint32_t priLen )
+	bool SetPrimaryKey( const bytes &priKey )
 	{
-		if( priLen != 16 && priLen != 24 && priLen != 32 )
-			return false;
-
 		try
 		{
-			decryptor.SetKey( priKey, priLen );
-			encryptor.SetKey( priKey, priLen );
+			SetKey( priKey );
+			return true;
 		}
 		catch( CryptoPP::Exception &e )
 		{
 			lasterror = e.GetWhat( );
-			return false;
 		}
 
-		return true;
+		return false;
 	}
 
-	bool GenerateSecondaryKey( const uint8_t *, uint32_t, uint32_t secSize, std::string &secKey, bool use )
+	bytes GetPrimaryKey( ) const
 	{
-		if( secSize != 16 && secSize != 24 && secSize != 32 )
+		if( key.empty( ) )
+			return bytes( );
+
+		return bytes( key.begin( ), key.end( ) );
+	}
+
+	size_t GetValidSecondaryKeyLength( size_t length ) const
+	{
+		return encrypter.GetValidKeyLength( length );
+	}
+
+	bool GenerateSecondaryKey(
+		const bytes &,
+		size_t secSize,
+		bytes &secKey,
+		bool use
+	)
+	{
+		if( !encrypter.IsValidKeyLength( secSize ) )
 			return false;
 
 		try
 		{
-			CryptoPP::AutoSeededRandomPool prng;
-
-			uint8_t key[32] = { 0 };
-			prng.GenerateBlock( key, secSize );
-
-			CryptoPP::StringSource( key, secSize, true, new CryptoPP::StringSink( secKey ) );
+			secKey.resize( secSize );
+			CryptoPP::AutoSeededRandomPool( ).GenerateBlock( secKey.data( ), secSize );
 
 			if( use )
-			{
-				decryptor.Resynchronize( key, secSize );
-				encryptor.Resynchronize( key, secSize );
-			}
+				SetIV( secKey );
+
+			return true;
 		}
 		catch( CryptoPP::Exception &e )
 		{
 			lasterror = e.GetWhat( );
-			return false;
 		}
 
-		return true;
+		return false;
 	}
 
-	bool SetSecondaryKey( const uint8_t *secKey, uint32_t secSize )
-	{
-		if( secSize != 16 && secSize != 24 && secSize != 32 )
-			return false;
-
-		try
-		{
-			decryptor.Resynchronize( secKey, secSize );
-			encryptor.Resynchronize( secKey, secSize );
-		}
-		catch( CryptoPP::Exception &e )
-		{
-			lasterror = e.GetWhat( );
-			return false;
-		}
-
-		return true;
-	}
-
-	bool Decrypt( const uint8_t *data, size_t len, std::string &decrypted )
+	bool SetSecondaryKey( const bytes &secKey )
 	{
 		try
 		{
-			CryptoPP::StringSource(
-				data,
-				len,
-				true,
-				new CryptoPP::StreamTransformationFilter(
-					decryptor,
-					new CryptoPP::StringSink( decrypted )
-				)
-			);
+			SetIV( secKey );
+			return true;
 		}
 		catch( CryptoPP::Exception &e )
 		{
 			lasterror = e.GetWhat( );
-			return false;
 		}
 
-		return true;
+		return false;
 	}
 
-	bool Encrypt( const uint8_t *data, size_t len, std::string &encrypted )
+	bytes GetSecondaryKey( ) const
+	{
+		if( iv.empty( ) )
+			return bytes( );
+
+		return bytes( iv.begin( ), iv.end( ) );
+	}
+
+	bool Decrypt( const bytes &encrypted, bytes &decrypted )
 	{
 		try
 		{
-			CryptoPP::StringSource(
-				data,
-				len,
-				true,
-				new CryptoPP::StreamTransformationFilter(
-					encryptor,
-					new CryptoPP::StringSink( encrypted )
-				)
-			);
+			CheckKey( );
+			decrypted.resize( encrypted.size( ) );
+			decrypter.ProcessData( decrypted.data( ), encrypted.data( ), encrypted.size( ) );
+			return true;
 		}
 		catch( CryptoPP::Exception &e )
 		{
 			lasterror = e.GetWhat( );
-			return false;
 		}
 
-		return true;
+		return false;
+	}
+
+	bool Encrypt( const bytes &decrypted, bytes &encrypted )
+	{
+		try
+		{
+			CheckKey( );
+			encrypted.resize( decrypted.size( ) );
+			encrypter.ProcessData( encrypted.data( ), decrypted.data( ), decrypted.size( ) );
+			return true;
+		}
+		catch( CryptoPP::Exception &e )
+		{
+			lasterror = e.GetWhat( );
+		}
+
+		return false;
 	}
 
 	const std::string &GetLastError( ) const
@@ -187,153 +240,232 @@ public:
 	}
 
 private:
-	CryptoPP::CBC_Mode<CryptoPP::AES>::Decryption decryptor;
-	CryptoPP::CBC_Mode<CryptoPP::AES>::Encryption encryptor;
+	void CheckKey( ) const
+	{
+		if( !keyset )
+			throw CryptoPP::Exception( CryptoPP::Exception::OTHER_ERROR, "AES key was not set" );
+	}
+
+	void SetKey( const bytes &priKey )
+	{
+		decrypter.SetKey( priKey.data( ), priKey.size( ) );
+		encrypter.SetKey( priKey.data( ), priKey.size( ) );
+		key.Assign( priKey.data( ), priKey.size( ) );
+		keyset = true;
+	}
+
+	void SetIV( const bytes &secKey )
+	{
+		decrypter.Resynchronize( secKey.data( ), secKey.size( ) );
+		encrypter.Resynchronize( secKey.data( ), secKey.size( ) );
+		iv.Assign( secKey.data( ), secKey.size( ) );
+	}
+
+	bool keyset;
+	CryptoPP::SecByteBlock key;
+	CryptoPP::SecByteBlock iv;
+	CryptoPP::CTR_Mode<CryptoPP::AES>::Decryption decrypter;
+	CryptoPP::CTR_Mode<CryptoPP::AES>::Encryption encrypter;
 	std::string lasterror;
 };
 
 class RSA : public Crypter
 {
 public:
-	bool GeneratePrimaryKey( uint32_t priSize, std::string &priKey, bool use )
+	RSA( ) :
+		prikeyset( false ),
+		pubkeyset( false )
+	{ }
+
+	std::string AlgorithmName( ) const
 	{
-		try
-		{
-			CryptoPP::AutoSeededRandomPool prng;
-
-			CryptoPP::RSA::PrivateKey privateKey;
-			privateKey.GenerateRandomWithKeySize( prng, priSize );
-
-			CryptoPP::StringSink privSink( priKey );
-			privateKey.Save( privSink.Ref( ) );
-
-			if( use )
-				decryptor.AccessKey( ).AssignFrom( privateKey );
-		}
-		catch( CryptoPP::Exception &e )
-		{
-			lasterror = e.GetWhat( );
-			return false;
-		}
-
-		return true;
+		return encrypter.AlgorithmName( );
 	}
 
-	bool SetPrimaryKey( const uint8_t *priKey, uint32_t priSize )
+	size_t MaxPlaintextLength( size_t length ) const
+	{
+		return encrypter.MaxPlaintextLength( length );
+	}
+
+	size_t CiphertextLength( size_t length ) const
+	{
+		return encrypter.CiphertextLength( length );
+	}
+
+	size_t FixedMaxPlaintextLength( ) const
+	{
+		return encrypter.FixedMaxPlaintextLength( );
+	}
+
+	size_t FixedCiphertextLength( ) const
+	{
+		return encrypter.FixedCiphertextLength( );
+	}
+
+	size_t GetValidPrimaryKeyLength( size_t length ) const
+	{
+		return length;
+	}
+
+	bool GeneratePrimaryKey( uint32_t priSize, bytes &priKey, bool use )
 	{
 		try
 		{
 			CryptoPP::RSA::PrivateKey privKey;
-			CryptoPP::StringSource stringSource(
-				priKey,
-				priSize,
-				true
-			);
-			privKey.Load( stringSource.Ref( ) );
-			decryptor.AccessKey( ).AssignFrom( privKey );
+
+			CryptoPP::AutoSeededRandomPool prng;
+			privKey.GenerateRandomWithKeySize( prng, priSize );
+
+			bytes_string priStr;
+			bytes_sink privSink( priStr );
+			privKey.Save( privSink.Ref( ) );
+			priKey.assign( priStr.begin( ), priStr.end( ) );
+
+			if( use )
+				SetPrivateKey( privKey );
+
+			return true;
 		}
 		catch( CryptoPP::Exception &e )
 		{
 			lasterror = e.GetWhat( );
-			return false;
 		}
 
-		return true;
+		return false;
 	}
 
-	bool GenerateSecondaryKey( const uint8_t *priKey, uint32_t priSize, uint32_t, std::string &secKey, bool use )
+	bool SetPrimaryKey( const bytes &priKey )
 	{
 		try
 		{
-			CryptoPP::RSA::PublicKey privKey;
-			CryptoPP::StringSource stringSource( priKey, priSize, true );
+			CryptoPP::RSA::PrivateKey privKey;
+			CryptoPP::StringSource stringSource( priKey.data( ), priKey.size( ), true );
+			privKey.Load( stringSource.Ref( ) );
+			SetPrivateKey( privKey );
+			return true;
+		}
+		catch( CryptoPP::Exception &e )
+		{
+			lasterror = e.GetWhat( );
+		}
+
+		return false;
+	}
+
+	bytes GetPrimaryKey( ) const
+	{
+		bytes_string priStr;
+		bytes_sink privSink( priStr );
+		decrypter.GetKey( ).Save( privSink.Ref( ) );
+		return bytes( priStr.begin( ), priStr.end( ) );
+	}
+
+	size_t GetValidSecondaryKeyLength( size_t length ) const
+	{
+		return length;
+	}
+
+	bool GenerateSecondaryKey(
+		const bytes &priKey,
+		size_t,
+		bytes &secKey,
+		bool use
+	)
+	{
+		try
+		{
+			CryptoPP::RSA::PrivateKey privKey;
+
+			CryptoPP::StringSource stringSource( priKey.data( ), priKey.size( ), true );
 			privKey.Load( stringSource.Ref( ) );
 
 			CryptoPP::RSA::PublicKey pubKey;
 			pubKey.AssignFrom( privKey );
-			CryptoPP::StringSink pubSink( secKey );
+
+			bytes_string secStr;
+			bytes_sink pubSink( secStr );
 			pubKey.Save( pubSink.Ref( ) );
+			secKey.assign( secStr.begin( ), secStr.end( ) );
 
 			if( use )
-				encryptor.AccessKey( ).AssignFrom( pubKey );
+				SetPublicKey( pubKey );
+
+			return true;
 		}
 		catch( CryptoPP::Exception &e )
 		{
 			lasterror = e.GetWhat( );
-			return false;
 		}
 
-		return true;
+		return false;
 	}
 
-	bool SetSecondaryKey( const uint8_t *secKey, uint32_t secSize )
+	bool SetSecondaryKey( const bytes &secKey )
 	{
 		try
 		{
 			CryptoPP::RSA::PublicKey pubKey;
-			CryptoPP::StringSource stringSource( secKey, secSize, true );
+			CryptoPP::StringSource stringSource( secKey.data( ), secKey.size( ), true );
 			pubKey.Load( stringSource.Ref( ) );
-			encryptor.AccessKey( ).AssignFrom( pubKey );
+			SetPublicKey( pubKey );
+			return true;
 		}
 		catch( CryptoPP::Exception &e )
 		{
 			lasterror = e.GetWhat( );
-			return false;
 		}
 
-		return true;
+		return false;
 	}
 
-	bool Decrypt( const uint8_t *data, size_t len, std::string &decrypted )
+	bytes GetSecondaryKey( ) const
+	{
+		bytes_string pubStr;
+		bytes_sink pubSink( pubStr );
+		encrypter.GetKey( ).Save( pubSink.Ref( ) );
+		return bytes( pubStr.begin( ), pubStr.end( ) );
+	}
+
+	bool Decrypt( const bytes &encrypted, bytes &decrypted )
 	{
 		try
 		{
+			CheckPrivateKey( );
 			CryptoPP::AutoSeededRandomPool prng;
-
-			CryptoPP::StringSource(
-				data,
-				len,
-				true,
-				new CryptoPP::PK_DecryptorFilter(
-					prng,
-					decryptor,
-					new CryptoPP::StringSink( decrypted )
-				)
+			decrypted.resize( decrypter.MaxPlaintextLength( encrypted.size( ) ) );
+			CryptoPP::DecodingResult res = decrypter.Decrypt(
+				prng,
+				encrypted.data( ),
+				encrypted.size( ),
+				decrypted.data( )
 			);
+			decrypted.resize( res.messageLength );
+			return true;
 		}
 		catch( CryptoPP::Exception &e )
 		{
 			lasterror = e.GetWhat( );
-			return false;
 		}
 
-		return true;
+		return false;
 	}
 
-	bool Encrypt( const uint8_t *data, size_t len, std::string &encrypted )
+	bool Encrypt( const bytes &decrypted, bytes &encrypted )
 	{
 		try
 		{
+			CheckPublicKey( );
 			CryptoPP::AutoSeededRandomPool prng;
-
-			CryptoPP::StringSource(
-				data,
-				len,
-				true,
-				new CryptoPP::PK_EncryptorFilter(
-					prng,
-					encryptor,
-					new CryptoPP::StringSink( encrypted )
-				)
-			);
+			encrypted.resize( encrypter.CiphertextLength( decrypted.size( ) ) );
+			encrypter.Encrypt( prng, decrypted.data( ), decrypted.size( ), encrypted.data( ) );
+			return true;
 		}
 		catch( CryptoPP::Exception &e )
 		{
 			lasterror = e.GetWhat( );
-			return false;
 		}
 
-		return true;
+		return false;
 	}
 
 	const std::string &GetLastError( ) const
@@ -342,153 +474,228 @@ public:
 	}
 
 private:
-	CryptoPP::RSAES_OAEP_SHA_Decryptor decryptor;
-	CryptoPP::RSAES_OAEP_SHA_Encryptor encryptor;
+	void CheckPrivateKey( ) const
+	{
+		if( !prikeyset )
+			throw CryptoPP::Exception( CryptoPP::Exception::OTHER_ERROR, "RSA private key was not set" );
+	}
+
+	void SetPrivateKey( const CryptoPP::RSA::PrivateKey &privKey )
+	{
+		decrypter.AccessKey( ).AssignFrom( privKey );
+		prikeyset = true;
+	}
+
+	void CheckPublicKey( ) const
+	{
+		if( !prikeyset )
+			throw CryptoPP::Exception( CryptoPP::Exception::OTHER_ERROR, "RSA public key was not set" );
+	}
+
+	void SetPublicKey( const CryptoPP::RSA::PublicKey &pubKey )
+	{
+		encrypter.AccessKey( ).AssignFrom( pubKey );
+		pubkeyset = true;
+	}
+
+	bool prikeyset;
+	bool pubkeyset;
+	CryptoPP::RSAES_OAEP_SHA_Decryptor decrypter;
+	CryptoPP::RSAES_OAEP_SHA_Encryptor encrypter;
 	std::string lasterror;
 };
 
 class ECP : public Crypter
 {
 public:
-	bool GeneratePrimaryKey( uint32_t priSize, std::string &priKey, bool use )
+	ECP( ) :
+		prikeyset( false ),
+		pubkeyset( false )
+	{ }
+
+	std::string AlgorithmName( ) const
+	{
+		return encrypter.AlgorithmName( );
+	}
+
+	size_t MaxPlaintextLength( size_t length ) const
+	{
+		return encrypter.MaxPlaintextLength( length );
+	}
+
+	size_t CiphertextLength( size_t length ) const
+	{
+		return encrypter.CiphertextLength( length );
+	}
+
+	size_t FixedMaxPlaintextLength( ) const
+	{
+		return encrypter.FixedMaxPlaintextLength( );
+	}
+
+	size_t FixedCiphertextLength( ) const
+	{
+		return encrypter.FixedCiphertextLength( );
+	}
+
+	size_t GetValidPrimaryKeyLength( size_t length ) const
+	{
+		return length;
+	}
+
+	bool GeneratePrimaryKey( size_t priSize, bytes &priKey, bool use )
 	{
 		try
 		{
+			CryptoPP::ECIES<CryptoPP::ECP>::PrivateKey privKey;
+
 			CryptoPP::AutoSeededRandomPool prng;
+			privKey.GenerateRandomWithKeySize( prng, priSize );
 
-			CryptoPP::ECIES<CryptoPP::ECP>::PrivateKey privateKey;
-			privateKey.GenerateRandomWithKeySize( prng, priSize );
-
-			CryptoPP::StringSink privSink( priKey );
-			privateKey.Save( privSink.Ref( ) );
+			bytes_string priStr;
+			bytes_sink privSink( priStr );
+			privKey.Save( privSink.Ref( ) );
+			priKey.assign( priStr.begin( ), priStr.end( ) );
 
 			if( use )
-				decryptor.AccessKey( ).AssignFrom( privateKey );
+				SetPrivateKey( privKey );
+
+			return true;
 		}
 		catch( CryptoPP::Exception &e )
 		{
 			lasterror = e.GetWhat( );
-			return false;
 		}
 
-		return true;
+		return false;
 	}
 
-	bool SetPrimaryKey( const uint8_t *priKey, uint32_t priSize )
+	bool SetPrimaryKey( const bytes &priKey )
 	{
 		try
 		{
 			CryptoPP::ECIES<CryptoPP::ECP>::PrivateKey privKey;
-			CryptoPP::StringSource stringSource(
-				priKey,
-				priSize,
-				true
-			);
+			CryptoPP::StringSource stringSource( priKey.data( ), priKey.size( ), true );
 			privKey.Load( stringSource.Ref( ) );
-			decryptor.AccessKey( ).AssignFrom( privKey );
+			SetPrivateKey( privKey );
+			return true;
 		}
 		catch( CryptoPP::Exception &e )
 		{
 			lasterror = e.GetWhat( );
-			return false;
 		}
 
-		return true;
+		return false;
 	}
 
-	bool GenerateSecondaryKey( const uint8_t *priKey, uint32_t priSize, uint32_t, std::string &secKey, bool use )
+	bytes GetPrimaryKey( ) const
+	{
+		bytes_string priStr;
+		bytes_sink privSink( priStr );
+		decrypter.GetKey( ).Save( privSink.Ref( ) );
+		return bytes( priStr.begin( ), priStr.end( ) );
+	}
+
+	size_t GetValidSecondaryKeyLength( size_t length ) const
+	{
+		return length;
+	}
+
+	bool GenerateSecondaryKey( const bytes &priKey, size_t, bytes &secKey, bool use )
 	{
 		try
 		{
 			CryptoPP::ECIES<CryptoPP::ECP>::PrivateKey privKey;
-			CryptoPP::StringSource stringSource( priKey, priSize, true );
+			CryptoPP::StringSource stringSource( priKey.data( ), priKey.size( ), true );
 			privKey.Load( stringSource.Ref( ) );
 
 			CryptoPP::ECIES<CryptoPP::ECP>::PublicKey pubKey;
 			pubKey.AssignFrom( privKey );
-			CryptoPP::StringSink pubSink( secKey );
+
+			bytes_string secStr;
+			bytes_sink pubSink( secStr );
 			pubKey.Save( pubSink.Ref( ) );
+			secKey.assign( secStr.begin( ), secStr.end( ) );
 
 			if( use )
-				encryptor.AccessKey( ).AssignFrom( pubKey );
+				SetPublicKey( pubKey );
+
+			return true;
 		}
 		catch( CryptoPP::Exception &e )
 		{
 			lasterror = e.GetWhat( );
-			return false;
 		}
 
-		return true;
+		return false;
 	}
 
-	bool SetSecondaryKey( const uint8_t *secKey, uint32_t secSize )
+	bool SetSecondaryKey( const bytes &secKey )
 	{
 		try
 		{
 			CryptoPP::ECIES<CryptoPP::ECP>::PublicKey pubKey;
-			CryptoPP::StringSource stringSource( secKey, secSize, true );
+			CryptoPP::StringSource stringSource( secKey.data( ), secKey.size( ), true );
 			pubKey.Load( stringSource.Ref( ) );
-			encryptor.AccessKey( ).AssignFrom( pubKey );
+			SetPublicKey( pubKey );
+			return true;
 		}
 		catch( CryptoPP::Exception &e )
 		{
 			lasterror = e.GetWhat( );
-			return false;
 		}
 
-		return true;
+		return false;
 	}
 
-	bool Decrypt( const uint8_t *data, size_t len, std::string &decrypted )
+	bytes GetSecondaryKey( ) const
+	{
+		bytes_string pubStr;
+		bytes_sink pubSink( pubStr );
+		encrypter.GetKey( ).Save( pubSink.Ref( ) );
+		return bytes( pubStr.begin( ), pubStr.end( ) );
+	}
+
+	bool Decrypt( const bytes &encrypted, bytes &decrypted )
 	{
 		try
 		{
+			CheckPrivateKey( );
 			CryptoPP::AutoSeededRandomPool prng;
-
-			CryptoPP::StringSource(
-				data,
-				len,
-				true,
-				new CryptoPP::PK_DecryptorFilter(
-					prng,
-					decryptor,
-					new CryptoPP::StringSink( decrypted )
-				)
+			decrypted.resize( decrypter.MaxPlaintextLength( encrypted.size( ) ) );
+			CryptoPP::DecodingResult res = decrypter.Decrypt(
+				prng,
+				encrypted.data( ),
+				encrypted.size( ),
+				decrypted.data( )
 			);
+			decrypted.resize( res.messageLength );
+			return true;
 		}
 		catch( CryptoPP::Exception &e )
 		{
 			lasterror = e.GetWhat( );
-			return false;
 		}
 
-		return true;
+		return false;
 	}
 
-	bool Encrypt( const uint8_t *data, size_t len, std::string &encrypted )
+	bool Encrypt( const bytes &decrypted, bytes &encrypted )
 	{
 		try
 		{
+			CheckPublicKey( );
 			CryptoPP::AutoSeededRandomPool prng;
-
-			CryptoPP::StringSource(
-				data,
-				len,
-				true,
-				new CryptoPP::PK_EncryptorFilter(
-					prng,
-					encryptor,
-					new CryptoPP::StringSink( encrypted )
-				)
-			);
+			encrypted.resize( encrypter.CiphertextLength( decrypted.size( ) ) );
+			encrypter.Encrypt( prng, decrypted.data( ), decrypted.size( ), encrypted.data( ) );
+			return true;
 		}
 		catch( CryptoPP::Exception &e )
 		{
 			lasterror = e.GetWhat( );
-			return false;
 		}
 
-		return true;
+		return false;
 	}
 
 	const std::string &GetLastError( ) const
@@ -497,14 +704,40 @@ public:
 	}
 
 private:
-	CryptoPP::ECIES<CryptoPP::ECP>::Decryptor decryptor;
-	CryptoPP::ECIES<CryptoPP::ECP>::Encryptor encryptor;
+	void CheckPrivateKey( ) const
+	{
+		if( !prikeyset )
+			throw CryptoPP::Exception( CryptoPP::Exception::OTHER_ERROR, "ECP private key was not set" );
+	}
+
+	void SetPrivateKey( const CryptoPP::ECIES<CryptoPP::ECP>::PrivateKey &privKey )
+	{
+		decrypter.AccessKey( ).AssignFrom( privKey );
+		prikeyset = true;
+	}
+
+	void CheckPublicKey( ) const
+	{
+		if( !prikeyset )
+			throw CryptoPP::Exception( CryptoPP::Exception::OTHER_ERROR, "ECP public key was not set" );
+	}
+
+	void SetPublicKey( const CryptoPP::ECIES<CryptoPP::ECP>::PublicKey &pubKey )
+	{
+		encrypter.AccessKey( ).AssignFrom( pubKey );
+		pubkeyset = true;
+	}
+
+	bool prikeyset;
+	bool pubkeyset;
+	CryptoPP::ECIES<CryptoPP::ECP>::Decryptor decrypter;
+	CryptoPP::ECIES<CryptoPP::ECP>::Encryptor encrypter;
 	std::string lasterror;
 };
 
 struct UserData
 {
-	Crypter *data;
+	Crypter *crypter;
 	uint8_t type;
 };
 
@@ -526,7 +759,7 @@ static UserData *GetUserData( lua_State *state, int32_t index )
 
 static Crypter *Get( lua_State *state, int32_t index )
 {
-	Crypter *crypter = GetUserData( state, index )->data;
+	Crypter *crypter = GetUserData( state, index )->crypter;
 	if( crypter == nullptr )
 		LUA->ArgError( index, invalid_error );
 
@@ -587,11 +820,11 @@ LUA_FUNCTION_STATIC( newindex )
 LUA_FUNCTION_STATIC( gc )
 {
 	UserData *userdata = GetUserData( state, 1 );
-	Crypter *crypter = userdata->data;
+	Crypter *crypter = userdata->crypter;
 	if( crypter == nullptr )
 		return 0;
 
-	userdata->data = nullptr;
+	userdata->crypter = nullptr;
 
 	try
 	{
@@ -606,10 +839,58 @@ LUA_FUNCTION_STATIC( gc )
 	return 1;
 }
 
+LUA_FUNCTION_STATIC( IsValid )
+{
+	LUA->PushBool( GetUserData( state, 1 )->crypter != nullptr );
+	return 1;
+}
+
+LUA_FUNCTION_STATIC( AlgorithmName )
+{
+	LUA->PushString( Get( state, 1 )->AlgorithmName( ).c_str( ) );
+	return 1;
+}
+
+LUA_FUNCTION_STATIC( MaxPlaintextLength )
+{
+	LUA->PushNumber( Get( state, 1 )->MaxPlaintextLength( static_cast<size_t>(
+		LUA->CheckNumber( 2 )
+	) ) );
+	return 1;
+}
+
+LUA_FUNCTION_STATIC( CiphertextLength )
+{
+	LUA->PushNumber( Get( state, 1 )->CiphertextLength( static_cast<size_t>(
+		LUA->CheckNumber( 2 )
+	) ) );
+	return 1;
+}
+
+LUA_FUNCTION_STATIC( FixedMaxPlaintextLength )
+{
+	LUA->PushNumber( Get( state, 1 )->FixedMaxPlaintextLength( ) );
+	return 1;
+}
+
+LUA_FUNCTION_STATIC( FixedCiphertextLength )
+{
+	LUA->PushNumber( Get( state, 1 )->FixedCiphertextLength( ) );
+	return 1;
+}
+
+LUA_FUNCTION_STATIC( GetValidPrimaryKeyLength )
+{
+	LUA->PushNumber( Get( state, 1 )->GetValidPrimaryKeyLength( static_cast<size_t>(
+		LUA->CheckNumber( 2 )
+	) ) );
+	return 1;
+}
+
 LUA_FUNCTION_STATIC( GeneratePrimaryKey )
 {
 	Crypter *crypter = Get( state, 1 );
-	uint32_t keySize = static_cast<uint32_t>( LUA->CheckNumber( 2 ) );
+	size_t keySize = static_cast<size_t>( LUA->CheckNumber( 2 ) );
 
 	bool use = true;
 	if( LUA->Top( ) > 2 )
@@ -618,7 +899,7 @@ LUA_FUNCTION_STATIC( GeneratePrimaryKey )
 		use = LUA->GetBool( 3 );
 	}
 
-	std::string priKey;
+	bytes priKey;
 	if( !crypter->GeneratePrimaryKey( keySize, priKey, use ) )
 	{
 		LUA->PushNil( );
@@ -626,7 +907,7 @@ LUA_FUNCTION_STATIC( GeneratePrimaryKey )
 		return 2;
 	}
 
-	LUA->PushString( priKey.c_str( ), priKey.size( ) );
+	LUA->PushString( reinterpret_cast<const char *>( priKey.data( ) ), priKey.size( ) );
 	return 1;
 }
 
@@ -635,10 +916,11 @@ LUA_FUNCTION_STATIC( SetPrimaryKey )
 	Crypter *crypter = Get( state, 1 );
 	LUA->CheckType( 2, GarrysMod::Lua::Type::STRING );
 
-	uint32_t priLen = 0;
+	size_t priLen = 0;
 	const uint8_t *priKey = reinterpret_cast<const uint8_t *>( LUA->GetString( 2, &priLen ) );
 
-	if( !crypter->SetPrimaryKey( priKey, priLen ) )
+	bytes privKey( priKey, priKey + priLen );
+	if( !crypter->SetPrimaryKey( privKey ) )
 	{
 		LUA->PushNil( );
 		LUA->PushString( crypter->GetLastError( ).c_str( ) );
@@ -649,13 +931,29 @@ LUA_FUNCTION_STATIC( SetPrimaryKey )
 	return 1;
 }
 
+LUA_FUNCTION_STATIC( GetPrimaryKey )
+{
+	Crypter *crypter = Get( state, 1 );
+	bytes privKey = crypter->GetPrimaryKey( );
+	LUA->PushString( reinterpret_cast<char *>( privKey.data( ) ), privKey.size( ) );
+	return 1;
+}
+
+LUA_FUNCTION_STATIC( GetValidSecondaryKeyLength )
+{
+	LUA->PushNumber( Get( state, 1 )->GetValidSecondaryKeyLength( static_cast<size_t>(
+		LUA->CheckNumber( 2 )
+	) ) );
+	return 1;
+}
+
 LUA_FUNCTION_STATIC( GenerateSecondaryKey )
 {
 	Crypter *crypter = Get( state, 1 );
 	LUA->CheckType( 2, GarrysMod::Lua::Type::STRING );
-	uint32_t keySize = static_cast<uint32_t>( LUA->CheckNumber( 3 ) );
+	size_t keySize = static_cast<size_t>( LUA->CheckNumber( 3 ) );
 
-	uint32_t priLen = 0;
+	size_t priLen = 0;
 	const uint8_t *priKey = reinterpret_cast<const uint8_t *>( LUA->GetString( 2, &priLen ) );
 
 	bool use = true;
@@ -665,15 +963,16 @@ LUA_FUNCTION_STATIC( GenerateSecondaryKey )
 		use = LUA->GetBool( 4 );
 	}
 
-	std::string secKey;
-	if( !crypter->GenerateSecondaryKey( priKey, priLen, keySize, secKey, use ) )
+	bytes privKey( priKey, priKey + priLen );
+	bytes secKey;
+	if( !crypter->GenerateSecondaryKey( privKey, keySize, secKey, use ) )
 	{
 		LUA->PushNil( );
 		LUA->PushString( crypter->GetLastError( ).c_str( ) );
 		return 2;
 	}
-
-	LUA->PushString( secKey.c_str( ), secKey.size( ) );
+	
+	LUA->PushString( reinterpret_cast<const char *>( secKey.data( ) ), secKey.size( ) );
 	return 1;
 }
 
@@ -682,10 +981,11 @@ LUA_FUNCTION_STATIC( SetSecondaryKey )
 	Crypter *crypter = Get( state, 1 );
 	LUA->CheckType( 2, GarrysMod::Lua::Type::STRING );
 
-	uint32_t secLen = 0;
+	size_t secLen = 0;
 	const uint8_t *secKey = reinterpret_cast<const uint8_t *>( LUA->GetString( 2, &secLen ) );
 
-	if( !crypter->SetSecondaryKey( secKey, secLen ) )
+	bytes secoKey( secKey, secKey + secLen );
+	if( !crypter->SetSecondaryKey( secoKey ) )
 	{
 		LUA->PushNil( );
 		LUA->PushString( crypter->GetLastError( ).c_str( ) );
@@ -696,23 +996,32 @@ LUA_FUNCTION_STATIC( SetSecondaryKey )
 	return 1;
 }
 
+LUA_FUNCTION_STATIC( GetSecondaryKey )
+{
+	Crypter *crypter = Get( state, 1 );
+	bytes pubKey = crypter->GetSecondaryKey( );
+	LUA->PushString( reinterpret_cast<char *>( pubKey.data( ) ), pubKey.size( ) );
+	return 1;
+}
+
 LUA_FUNCTION_STATIC( Decrypt )
 {
 	Crypter *crypter = Get( state, 1 );
 	LUA->CheckType( 2, GarrysMod::Lua::Type::STRING );
 
-	uint32_t len = 0;
+	size_t len = 0;
 	const uint8_t *data = reinterpret_cast<const uint8_t *>( LUA->GetString( 2, &len ) );
 
-	std::string decrypted;
-	if( !crypter->Decrypt( data, len, decrypted ) )
+	bytes encrypted( data, data + len );
+	bytes decrypted;
+	if( !crypter->Decrypt( encrypted, decrypted ) )
 	{
 		LUA->PushNil( );
 		LUA->PushString( crypter->GetLastError( ).c_str( ) );
 		return 2;
 	}
 
-	LUA->PushString( decrypted.c_str( ), decrypted.size( ) );
+	LUA->PushString( reinterpret_cast<const char *>( decrypted.data( ) ), decrypted.size( ) );
 	return 1;
 }
 
@@ -721,18 +1030,19 @@ LUA_FUNCTION_STATIC( Encrypt )
 	Crypter *crypter = Get( state, 1 );
 	LUA->CheckType( 2, GarrysMod::Lua::Type::STRING );
 
-	uint32_t len = 0;
+	size_t len = 0;
 	const uint8_t *data = reinterpret_cast<const uint8_t *>( LUA->GetString( 2, &len ) );
 
-	std::string encrypted;
-	if( !crypter->Encrypt( data, len, encrypted ) )
+	bytes decrypted( data, data + len );
+	bytes encrypted;
+	if( !crypter->Encrypt( decrypted, encrypted ) )
 	{
 		LUA->PushNil( );
 		LUA->PushString( crypter->GetLastError( ).c_str( ) );
 		return 2;
 	}
 
-	LUA->PushString( encrypted.c_str( ), encrypted.size( ) );
+	LUA->PushString( reinterpret_cast<const char *>( encrypted.data( ) ), encrypted.size( ) );
 	return 1;
 }
 
@@ -747,9 +1057,8 @@ LUA_FUNCTION_STATIC( Creator )
 		return 2;
 	}
 
-	void *luadata = LUA->NewUserdata( sizeof( UserData ) );
-	UserData *userdata = reinterpret_cast<UserData *>( luadata );
-	userdata->data = crypter;
+	UserData *userdata = reinterpret_cast<UserData *>( LUA->NewUserdata( sizeof( UserData ) ) );
+	userdata->crypter = crypter;
 	userdata->type = metatype;
 
 	LUA->CreateMetaTableType( metaname, metatype );
@@ -764,9 +1073,6 @@ LUA_FUNCTION_STATIC( Creator )
 void Initialize( lua_State *state )
 {
 	LUA->CreateMetaTableType( metaname, metatype );
-
-	LUA->Push( -1 );
-	LUA->SetField( -2, "__metatable" );
 
 	LUA->PushCFunction( tostring );
 	LUA->SetField( -2, "__tostring" );
@@ -786,17 +1092,47 @@ void Initialize( lua_State *state )
 	LUA->PushCFunction( gc );
 	LUA->SetField( -2, "Destroy" );
 
+	LUA->PushCFunction( IsValid );
+	LUA->SetField( -2, "IsValid" );
+
+	LUA->PushCFunction( AlgorithmName );
+	LUA->SetField( -2, "AlgorithmName" );
+
+	LUA->PushCFunction( MaxPlaintextLength );
+	LUA->SetField( -2, "MaxPlaintextLength" );
+
+	LUA->PushCFunction( CiphertextLength );
+	LUA->SetField( -2, "CiphertextLength" );
+
+	LUA->PushCFunction( FixedMaxPlaintextLength );
+	LUA->SetField( -2, "FixedMaxPlaintextLength" );
+
+	LUA->PushCFunction( FixedCiphertextLength );
+	LUA->SetField( -2, "FixedCiphertextLength" );
+
+	LUA->PushCFunction( GetValidPrimaryKeyLength );
+	LUA->SetField( -2, "GetValidPrimaryKeyLength" );
+
 	LUA->PushCFunction( GeneratePrimaryKey );
 	LUA->SetField( -2, "GeneratePrimaryKey" );
 
 	LUA->PushCFunction( SetPrimaryKey );
 	LUA->SetField( -2, "SetPrimaryKey" );
 
+	LUA->PushCFunction( GetPrimaryKey );
+	LUA->SetField( -2, "GetPrimaryKey" );
+
+	LUA->PushCFunction( GetValidSecondaryKeyLength );
+	LUA->SetField( -2, "GetValidSecondaryKeyLength" );
+
 	LUA->PushCFunction( GenerateSecondaryKey );
 	LUA->SetField( -2, "GenerateSecondaryKey" );
 
 	LUA->PushCFunction( SetSecondaryKey );
 	LUA->SetField( -2, "SetSecondaryKey" );
+
+	LUA->PushCFunction( GetSecondaryKey );
+	LUA->SetField( -2, "GetSecondaryKey" );
 
 	LUA->PushCFunction( Decrypt );
 	LUA->SetField( -2, "Decrypt" );
@@ -814,6 +1150,12 @@ void Initialize( lua_State *state )
 
 	LUA->PushCFunction( Creator<ECP> );
 	LUA->SetField( -2, "ECP" );
+}
+
+void Deinitialize( lua_State *state )
+{
+	LUA->PushNil( );
+	LUA->SetField( GarrysMod::Lua::INDEX_REGISTRY, metaname );
 }
 
 }

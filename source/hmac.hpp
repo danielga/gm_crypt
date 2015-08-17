@@ -2,7 +2,7 @@
 
 struct lua_State;
 
-namespace hash
+namespace hmac
 {
 
 void Initialize( lua_State *state );
