@@ -23,40 +23,40 @@ CreateSolution("crypt")
 
 	CreateProject(SERVERSIDE)
 		IncludeLuaShared()
-		defines({"CRYPTOPP_ENABLE_NAMESPACE_WEAK=1"})
+		defines("CRYPTOPP_ENABLE_NAMESPACE_WEAK=1")
 
-		SetFilter({FILTER_WINDOWS, "options:not compile-cryptopp"})
-			includedirs({CRYPTOPP_FOLDER .. "/include"})
-			libdirs({CRYPTOPP_FOLDER .. "/lib"})
-			links({"cryptopp"})
+		SetFilter(FILTER_WINDOWS, "options:not compile-cryptopp")
+			includedirs(CRYPTOPP_FOLDER .. "/include")
+			libdirs(CRYPTOPP_FOLDER .. "/lib")
+			links("cryptopp")
 
-		SetFilter({FILTER_LINUX, FILTER_MACOSX, "options:not compile-cryptopp"})
-			linkoptions({"-Wl,-Bstatic,-lcryptopp,-Bdynamic"})
+		SetFilter(FILTER_LINUX, FILTER_MACOSX, "options:not compile-cryptopp")
+			linkoptions("-Wl,-Bstatic,-lcryptopp,-Bdynamic")
 
-		SetFilter({"options:compile-cryptopp"})
-			includedirs({CRYPTOPP_FOLDER .. "/include"})
-			links({"cryptopp"})
+		SetFilter("options:compile-cryptopp")
+			includedirs(CRYPTOPP_FOLDER .. "/include")
+			links("cryptopp")
 
 	CreateProject(CLIENTSIDE)
 		IncludeLuaShared()
-		defines({"CRYPTOPP_ENABLE_NAMESPACE_WEAK=1"})
+		defines("CRYPTOPP_ENABLE_NAMESPACE_WEAK=1")
 
-		SetFilter({FILTER_WINDOWS, "options:not compile-cryptopp"})
-			includedirs({CRYPTOPP_FOLDER .. "/include"})
-			libdirs({CRYPTOPP_FOLDER .. "/lib"})
-			links({"cryptopp"})
+		SetFilter(FILTER_WINDOWS, "options:not compile-cryptopp")
+			includedirs(CRYPTOPP_FOLDER .. "/include")
+			libdirs(CRYPTOPP_FOLDER .. "/lib")
+			links("cryptopp")
 
-		SetFilter({FILTER_LINUX, FILTER_MACOSX, "options:not compile-cryptopp"})
-			linkoptions({"-Wl,-Bstatic,-lcryptopp,-Bdynamic"})
+		SetFilter(FILTER_LINUX, FILTER_MACOSX, "options:not compile-cryptopp")
+			linkoptions("-Wl,-Bstatic,-lcryptopp,-Bdynamic")
 
-		SetFilter({"options:compile-cryptopp"})
-			includedirs({CRYPTOPP_FOLDER .. "/include"})
-			links({"cryptopp"})
+		SetFilter("options:compile-cryptopp")
+			includedirs(CRYPTOPP_FOLDER .. "/include")
+			links("cryptopp")
 
 	if _OPTIONS["compile-cryptopp"] then
 		project("cryptopp")
 			kind("StaticLib")
-			defines({"USE_PRECOMPILED_HEADERS"})
+			defines("USE_PRECOMPILED_HEADERS")
 			includedirs({
 				CRYPTOPP_FOLDER .. "/include/cryptopp",
 				CRYPTOPP_FOLDER .. "/src"
