@@ -16,4 +16,4 @@ Another option available for all platforms is compiling cryptopp before linking 
 
 
   [1]: http://www.cryptopp.com
-  [2]: https://bitbucket.org/danielga/garrysmod_common
+  [2]: https://github.com/danielga/garrysmod_common
