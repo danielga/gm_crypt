@@ -18,33 +18,26 @@
 namespace hmac
 {
 
-struct UserData
-{
-	CryptoPP::HMAC_Base *hmac;
-	uint8_t type;
-	CryptoPP::SecByteBlock *key;
-};
-
 static const char *metaname = "hmac";
-static const uint8_t metatype = 32;
+static int32_t metatype = GarrysMod::Lua::Type::NONE;
 static const char *invalid_error = "invalid hmac";
 static const char *table_name = "hmac";
 
-inline void CheckType( lua_State *state, int32_t index )
+inline void CheckType( GarrysMod::Lua::ILuaBase *LUA, int32_t index )
 {
 	if( !LUA->IsType( index, metatype ) )
-		luaL_typerror( state, index, metaname );
+		luaL_typerror( LUA->state, index, metaname );
 }
 
-static UserData *GetUserData( lua_State *state, int32_t index )
+static CryptoPP::HMAC_Base *GetUserData( GarrysMod::Lua::ILuaBase *LUA, int32_t index )
 {
-	CheckType( state, index );
-	return static_cast<UserData *>( LUA->GetUserdata( index ) );
+	CheckType( LUA, index );
+	return LUA->GetUserType<CryptoPP::HMAC_Base>( index, metatype );
 }
 
-static CryptoPP::HMAC_Base *Get( lua_State *state, int32_t index )
+static CryptoPP::HMAC_Base *Get( GarrysMod::Lua::ILuaBase *LUA, int32_t index )
 {
-	CryptoPP::HMAC_Base *hmac = GetUserData( state, index )->hmac;
+	CryptoPP::HMAC_Base *hmac = GetUserData( LUA, index );
 	if( hmac == nullptr )
 		LUA->ArgError( index, invalid_error );
 
@@ -56,11 +49,11 @@ LUA_FUNCTION_STATIC( tostring )
 
 #if defined _WIN32
 
-	lua_pushfstring( state, "%s: %p", metaname, Get( state, 1 ) );
+	lua_pushfstring( LUA->state, "%s: %p", metaname, Get( LUA, 1 ) );
 
 #elif defined __linux || defined __APPLE__
 
-	lua_pushfstring( state, "%s: 0x%p", metaname, Get( state, 1 ) );
+	lua_pushfstring( LUA->state, "%s: 0x%p", metaname, Get( LUA, 1 ) );
 
 #endif
 
@@ -69,15 +62,15 @@ LUA_FUNCTION_STATIC( tostring )
 
 LUA_FUNCTION_STATIC( eq )
 {
-	LUA->PushBool( Get( state, 1 ) == Get( state, 2 ) );
+	LUA->PushBool( Get( LUA, 1 ) == Get( LUA, 2 ) );
 	return 1;
 }
 
 LUA_FUNCTION_STATIC( index )
 {
-	CheckType( state, 1 );
+	CheckType( LUA, 1 );
 
-	LUA->CreateMetaTableType( metaname, metatype );
+	LUA->PushMetaTable( metatype );
 	LUA->Push( 2 );
 	LUA->RawGet( -2 );
 	if( !LUA->IsType( -1, GarrysMod::Lua::Type::NIL ) )
@@ -85,7 +78,7 @@ LUA_FUNCTION_STATIC( index )
 
 	LUA->Pop( 2 );
 
-	lua_getfenv( state, 1 );
+	lua_getfenv( LUA->state, 1 );
 	LUA->Push( 2 );
 	LUA->RawGet( -2 );
 	return 1;
@@ -93,9 +86,9 @@ LUA_FUNCTION_STATIC( index )
 
 LUA_FUNCTION_STATIC( newindex )
 {
-	CheckType( state, 1 );
+	CheckType( LUA, 1 );
 
-	lua_getfenv( state, 1 );
+	lua_getfenv( LUA->state, 1 );
 	LUA->Push( 2 );
 	LUA->Push( 3 );
 	LUA->RawSet( -3 );
@@ -104,19 +97,14 @@ LUA_FUNCTION_STATIC( newindex )
 
 LUA_FUNCTION_STATIC( gc )
 {
-	UserData *userdata = GetUserData( state, 1 );
-	CryptoPP::HMAC_Base *hmac = userdata->hmac;
-	CryptoPP::SecByteBlock *key = userdata->key;
-	if( hmac == nullptr || key == nullptr )
+	CryptoPP::HMAC_Base *hmac = GetUserData( LUA, 1 );
+	if( hmac == nullptr )
 		return 0;
-
-	userdata->hmac = nullptr;
-	userdata->key = nullptr;
 
 	try
 	{
 		delete hmac;
-		delete key;
+		LUA->SetUserType( 1, nullptr );
 		return 0;
 	}
 	catch( const CryptoPP::Exception &e )
@@ -129,13 +117,13 @@ LUA_FUNCTION_STATIC( gc )
 
 LUA_FUNCTION_STATIC( IsValid )
 {
-	LUA->PushBool( GetUserData( state, 1 )->hmac != nullptr );
+	LUA->PushBool( GetUserData( LUA, 1 ) != nullptr );
 	return 1;
 }
 
 LUA_FUNCTION_STATIC( Update )
 {
-	CryptoPP::HMAC_Base *hmac = Get( state, 1 );
+	CryptoPP::HMAC_Base *hmac = Get( LUA, 1 );
 	LUA->CheckType( 2, GarrysMod::Lua::Type::STRING );
 
 	uint32_t len = 0;
@@ -159,7 +147,7 @@ LUA_FUNCTION_STATIC( Update )
 
 LUA_FUNCTION_STATIC( Final )
 {
-	CryptoPP::HMAC_Base *hmac = Get( state, 1 );
+	CryptoPP::HMAC_Base *hmac = Get( LUA, 1 );
 
 	try
 	{
@@ -183,7 +171,7 @@ LUA_FUNCTION_STATIC( Final )
 
 LUA_FUNCTION_STATIC( Restart )
 {
-	CryptoPP::HMAC_Base *hmac = Get( state, 1 );
+	CryptoPP::HMAC_Base *hmac = Get( LUA, 1 );
 
 	try
 	{
@@ -203,7 +191,7 @@ LUA_FUNCTION_STATIC( Restart )
 
 LUA_FUNCTION_STATIC( CalculateDigest )
 {
-	CryptoPP::HMAC_Base *hmac = Get( state, 1 );
+	CryptoPP::HMAC_Base *hmac = Get( LUA, 1 );
 	LUA->CheckType( 2, GarrysMod::Lua::Type::STRING );
 
 	uint32_t len = 0;
@@ -231,43 +219,43 @@ LUA_FUNCTION_STATIC( CalculateDigest )
 
 LUA_FUNCTION_STATIC( AlgorithmName )
 {
-	LUA->PushString( Get( state, 1 )->AlgorithmName( ).c_str( ) );
+	LUA->PushString( Get( LUA, 1 )->AlgorithmName( ).c_str( ) );
 	return 1;
 }
 
 LUA_FUNCTION_STATIC( DigestSize )
 {
-	LUA->PushNumber( Get( state, 1 )->DigestSize( ) );
+	LUA->PushNumber( Get( LUA, 1 )->DigestSize( ) );
 	return 1;
 }
 
 LUA_FUNCTION_STATIC( OptimalBlockSize )
 {
-	LUA->PushNumber( Get( state, 1 )->OptimalBlockSize( ) );
+	LUA->PushNumber( Get( LUA, 1 )->OptimalBlockSize( ) );
 	return 1;
 }
 
 LUA_FUNCTION_STATIC( MinKeyLength )
 {
-	LUA->PushNumber( Get( state, 1 )->MinKeyLength( ) );
+	LUA->PushNumber( Get( LUA, 1 )->MinKeyLength( ) );
 	return 1;
 }
 
 LUA_FUNCTION_STATIC( MaxKeyLength )
 {
-	LUA->PushNumber( Get( state, 1 )->MaxKeyLength( ) );
+	LUA->PushNumber( Get( LUA, 1 )->MaxKeyLength( ) );
 	return 1;
 }
 
 LUA_FUNCTION_STATIC( DefaultKeyLength )
 {
-	LUA->PushNumber( Get( state, 1 )->DefaultKeyLength( ) );
+	LUA->PushNumber( Get( LUA, 1 )->DefaultKeyLength( ) );
 	return 1;
 }
 
 LUA_FUNCTION_STATIC( GetValidKeyLength )
 {
-	LUA->PushNumber( Get( state, 1 )->GetValidKeyLength(
+	LUA->PushNumber( Get( LUA, 1 )->GetValidKeyLength(
 		static_cast<size_t>( LUA->CheckNumber( 2 ) )
 	) );
 	return 1;
@@ -275,10 +263,7 @@ LUA_FUNCTION_STATIC( GetValidKeyLength )
 
 LUA_FUNCTION_STATIC( SetKey )
 {
-	UserData *udata = GetUserData( state, 1 );
-	if( udata->hmac == nullptr )
-		LUA->ArgError( 1, invalid_error );
-
+	CryptoPP::HMAC_Base *hmac = Get( LUA, 1 );
 	LUA->CheckType( 2, GarrysMod::Lua::Type::STRING );
 
 	uint32_t keylen = 0;
@@ -286,8 +271,7 @@ LUA_FUNCTION_STATIC( SetKey )
 
 	try
 	{
-		udata->hmac->SetKey( key, keylen );
-		udata->key->Assign( key, keylen );
+		hmac->SetKey( key, keylen );
 		LUA->PushBool( true );
 		return 1;
 	}
@@ -300,29 +284,12 @@ LUA_FUNCTION_STATIC( SetKey )
 	return 2;
 }
 
-LUA_FUNCTION_STATIC( GetKey )
-{
-	UserData *udata = GetUserData( state, 1 );
-	if( udata->hmac == nullptr )
-		LUA->ArgError( 1, invalid_error );
-
-	try
-	{
-		LUA->PushString( reinterpret_cast<char *>( udata->key->data( ) ), udata->key->size( ) );
-		return 1;
-	}
-	catch( const CryptoPP::Exception &e )
-	{
-		LUA->PushNil( );
-		LUA->PushString( e.what( ) );
-	}
-
-	return 2;
-}
-
 template<typename Hasher, bool Secure = true>
-LUA_FUNCTION_STATIC( Creator )
+static int Creator( lua_State *state ) GMOD_NOEXCEPT
 {
+	GarrysMod::Lua::ILuaBase *LUA = state->luabase;
+	LUA->SetState( state );
+
 	// let's annoy everyone to force them to drop insecure algorithms
 	if( !Secure )
 		static_cast<GarrysMod::Lua::ILuaInterface *>( LUA )->ErrorNoHalt(
@@ -338,26 +305,13 @@ LUA_FUNCTION_STATIC( Creator )
 		return 2;
 	}
 
-	CryptoPP::SecByteBlock *key = new( std::nothrow ) CryptoPP::SecByteBlock(
-		hmac->GetValidKeyLength( 16 )
-	);
-	if( key == nullptr )
-	{
-		delete hmac;
-		LUA->PushNil( );
-		LUA->PushString( "failed to create key object" );
-		return 2;
-	}
+	CryptoPP::SecByteBlock key( hmac->GetValidKeyLength( 16 ) );
+	CryptoPP::AutoSeededRandomPool( ).GenerateBlock( key.data( ), key.size( ) );
+	hmac->SetKey( key.data( ), key.size( ) );
 
-	CryptoPP::AutoSeededRandomPool( ).GenerateBlock( key->data( ), key->size( ) );
-	hmac->SetKey( key->data( ), key->size( ) );
+	LUA->PushUserType( hmac, metatype );
 
-	UserData *userdata = reinterpret_cast<UserData *>( LUA->NewUserdata( sizeof( UserData ) ) );
-	userdata->hmac = hmac;
-	userdata->type = metatype;
-	userdata->key = key;
-
-	LUA->CreateMetaTableType( metaname, metatype );
+	LUA->PushMetaTable( metatype );
 	LUA->SetMetaTable( -2 );
 
 	LUA->CreateTable( );
@@ -366,9 +320,9 @@ LUA_FUNCTION_STATIC( Creator )
 	return 1;
 }
 
-void Initialize( lua_State *state )
+void Initialize( GarrysMod::Lua::ILuaBase *LUA )
 {
-	LUA->CreateMetaTableType( metaname, metatype );
+	metatype = LUA->CreateMetaTable( metaname );
 
 	LUA->PushCFunction( tostring );
 	LUA->SetField( -2, "__tostring" );
@@ -427,9 +381,6 @@ void Initialize( lua_State *state )
 	LUA->PushCFunction( SetKey );
 	LUA->SetField( -2, "SetKey" );
 
-	LUA->PushCFunction( GetKey );
-	LUA->SetField( -2, "GetKey" );
-
 	LUA->Pop( 1 );
 
 	LUA->CreateTable( );
@@ -479,7 +430,7 @@ void Initialize( lua_State *state )
 	LUA->SetField( -2, table_name );
 }
 
-void Deinitialize( lua_State *state )
+void Deinitialize( GarrysMod::Lua::ILuaBase *LUA )
 {
 	LUA->PushNil( );
 	LUA->SetField( GarrysMod::Lua::INDEX_REGISTRY, metaname );

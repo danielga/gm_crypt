@@ -735,31 +735,25 @@ private:
 	std::string lasterror;
 };
 
-struct UserData
-{
-	Crypter *crypter;
-	uint8_t type;
-};
-
 static const char *metaname = "crypter";
-static const uint8_t metatype = 30;
+static int32_t metatype = GarrysMod::Lua::Type::NONE;
 static const char *invalid_error = "invalid crypter";
 
-inline void CheckType( lua_State *state, int32_t index )
+inline void CheckType( GarrysMod::Lua::ILuaBase *LUA, int32_t index )
 {
 	if( !LUA->IsType( index, metatype ) )
-		luaL_typerror( state, index, metaname );
+		luaL_typerror( LUA->state, index, metaname );
 }
 
-static UserData *GetUserData( lua_State *state, int32_t index )
+static Crypter *GetUserData( GarrysMod::Lua::ILuaBase *LUA, int32_t index )
 {
-	CheckType( state, index );
-	return static_cast<UserData *>( LUA->GetUserdata( index ) );
+	CheckType( LUA, index );
+	return  LUA->GetUserType<Crypter>( index, metatype );
 }
 
-static Crypter *Get( lua_State *state, int32_t index )
+static Crypter *Get( GarrysMod::Lua::ILuaBase *LUA, int32_t index )
 {
-	Crypter *crypter = GetUserData( state, index )->crypter;
+	Crypter *crypter = GetUserData( LUA, index );
 	if( crypter == nullptr )
 		LUA->ArgError( index, invalid_error );
 
@@ -771,11 +765,11 @@ LUA_FUNCTION_STATIC( tostring )
 
 #if defined _WIN32
 
-	lua_pushfstring( state, "%s: %p", metaname, Get( state, 1 ) );
+	lua_pushfstring( LUA->state, "%s: %p", metaname, Get( LUA, 1 ) );
 
 #elif defined __linux || defined __APPLE__
 
-	lua_pushfstring( state, "%s: 0x%p", metaname, Get( state, 1 ) );
+	lua_pushfstring( LUA->state, "%s: 0x%p", metaname, Get( LUA, 1 ) );
 
 #endif
 
@@ -784,15 +778,15 @@ LUA_FUNCTION_STATIC( tostring )
 
 LUA_FUNCTION_STATIC( eq )
 {
-	LUA->PushBool( Get( state, 1 ) == Get( state, 2 ) );
+	LUA->PushBool( Get( LUA, 1 ) == Get( LUA, 2 ) );
 	return 1;
 }
 
 LUA_FUNCTION_STATIC( index )
 {
-	CheckType( state, 1 );
+	CheckType( LUA, 1 );
 
-	LUA->CreateMetaTableType( metaname, metatype );
+	LUA->PushMetaTable( metatype );
 	LUA->Push( 2 );
 	LUA->RawGet( -2 );
 	if( !LUA->IsType( -1, GarrysMod::Lua::Type::NIL ) )
@@ -800,7 +794,7 @@ LUA_FUNCTION_STATIC( index )
 
 	LUA->Pop( 2 );
 
-	lua_getfenv( state, 1 );
+	lua_getfenv( LUA->state, 1 );
 	LUA->Push( 2 );
 	LUA->RawGet( -2 );
 	return 1;
@@ -808,9 +802,9 @@ LUA_FUNCTION_STATIC( index )
 
 LUA_FUNCTION_STATIC( newindex )
 {
-	CheckType( state, 1 );
+	CheckType( LUA, 1 );
 
-	lua_getfenv( state, 1 );
+	lua_getfenv( LUA->state, 1 );
 	LUA->Push( 2 );
 	LUA->Push( 3 );
 	LUA->RawSet( -3 );
@@ -819,16 +813,14 @@ LUA_FUNCTION_STATIC( newindex )
 
 LUA_FUNCTION_STATIC( gc )
 {
-	UserData *userdata = GetUserData( state, 1 );
-	Crypter *crypter = userdata->crypter;
+	Crypter *crypter = GetUserData( LUA, 1 );
 	if( crypter == nullptr )
 		return 0;
-
-	userdata->crypter = nullptr;
 
 	try
 	{
 		delete crypter;
+		LUA->SetUserType( 1, nullptr );
 		return 0;
 	}
 	catch( const CryptoPP::Exception &e )
@@ -841,19 +833,19 @@ LUA_FUNCTION_STATIC( gc )
 
 LUA_FUNCTION_STATIC( IsValid )
 {
-	LUA->PushBool( GetUserData( state, 1 )->crypter != nullptr );
+	LUA->PushBool( GetUserData( LUA, 1 ) != nullptr );
 	return 1;
 }
 
 LUA_FUNCTION_STATIC( AlgorithmName )
 {
-	LUA->PushString( Get( state, 1 )->AlgorithmName( ).c_str( ) );
+	LUA->PushString( Get( LUA, 1 )->AlgorithmName( ).c_str( ) );
 	return 1;
 }
 
 LUA_FUNCTION_STATIC( MaxPlaintextLength )
 {
-	LUA->PushNumber( Get( state, 1 )->MaxPlaintextLength( static_cast<size_t>(
+	LUA->PushNumber( Get( LUA, 1 )->MaxPlaintextLength( static_cast<size_t>(
 		LUA->CheckNumber( 2 )
 	) ) );
 	return 1;
@@ -861,7 +853,7 @@ LUA_FUNCTION_STATIC( MaxPlaintextLength )
 
 LUA_FUNCTION_STATIC( CiphertextLength )
 {
-	LUA->PushNumber( Get( state, 1 )->CiphertextLength( static_cast<size_t>(
+	LUA->PushNumber( Get( LUA, 1 )->CiphertextLength( static_cast<size_t>(
 		LUA->CheckNumber( 2 )
 	) ) );
 	return 1;
@@ -869,19 +861,19 @@ LUA_FUNCTION_STATIC( CiphertextLength )
 
 LUA_FUNCTION_STATIC( FixedMaxPlaintextLength )
 {
-	LUA->PushNumber( Get( state, 1 )->FixedMaxPlaintextLength( ) );
+	LUA->PushNumber( Get( LUA, 1 )->FixedMaxPlaintextLength( ) );
 	return 1;
 }
 
 LUA_FUNCTION_STATIC( FixedCiphertextLength )
 {
-	LUA->PushNumber( Get( state, 1 )->FixedCiphertextLength( ) );
+	LUA->PushNumber( Get( LUA, 1 )->FixedCiphertextLength( ) );
 	return 1;
 }
 
 LUA_FUNCTION_STATIC( GetValidPrimaryKeyLength )
 {
-	LUA->PushNumber( Get( state, 1 )->GetValidPrimaryKeyLength( static_cast<size_t>(
+	LUA->PushNumber( Get( LUA, 1 )->GetValidPrimaryKeyLength( static_cast<size_t>(
 		LUA->CheckNumber( 2 )
 	) ) );
 	return 1;
@@ -889,7 +881,7 @@ LUA_FUNCTION_STATIC( GetValidPrimaryKeyLength )
 
 LUA_FUNCTION_STATIC( GeneratePrimaryKey )
 {
-	Crypter *crypter = Get( state, 1 );
+	Crypter *crypter = Get( LUA, 1 );
 	size_t keySize = static_cast<size_t>( LUA->CheckNumber( 2 ) );
 
 	bool use = true;
@@ -913,7 +905,7 @@ LUA_FUNCTION_STATIC( GeneratePrimaryKey )
 
 LUA_FUNCTION_STATIC( SetPrimaryKey )
 {
-	Crypter *crypter = Get( state, 1 );
+	Crypter *crypter = Get( LUA, 1 );
 	LUA->CheckType( 2, GarrysMod::Lua::Type::STRING );
 
 	size_t priLen = 0;
@@ -933,7 +925,7 @@ LUA_FUNCTION_STATIC( SetPrimaryKey )
 
 LUA_FUNCTION_STATIC( GetPrimaryKey )
 {
-	Crypter *crypter = Get( state, 1 );
+	Crypter *crypter = Get( LUA, 1 );
 	bytes privKey = crypter->GetPrimaryKey( );
 	LUA->PushString( reinterpret_cast<char *>( privKey.data( ) ), privKey.size( ) );
 	return 1;
@@ -941,7 +933,7 @@ LUA_FUNCTION_STATIC( GetPrimaryKey )
 
 LUA_FUNCTION_STATIC( GetValidSecondaryKeyLength )
 {
-	LUA->PushNumber( Get( state, 1 )->GetValidSecondaryKeyLength( static_cast<size_t>(
+	LUA->PushNumber( Get( LUA, 1 )->GetValidSecondaryKeyLength( static_cast<size_t>(
 		LUA->CheckNumber( 2 )
 	) ) );
 	return 1;
@@ -949,7 +941,7 @@ LUA_FUNCTION_STATIC( GetValidSecondaryKeyLength )
 
 LUA_FUNCTION_STATIC( GenerateSecondaryKey )
 {
-	Crypter *crypter = Get( state, 1 );
+	Crypter *crypter = Get( LUA, 1 );
 	LUA->CheckType( 2, GarrysMod::Lua::Type::STRING );
 	size_t keySize = static_cast<size_t>( LUA->CheckNumber( 3 ) );
 
@@ -978,7 +970,7 @@ LUA_FUNCTION_STATIC( GenerateSecondaryKey )
 
 LUA_FUNCTION_STATIC( SetSecondaryKey )
 {
-	Crypter *crypter = Get( state, 1 );
+	Crypter *crypter = Get( LUA, 1 );
 	LUA->CheckType( 2, GarrysMod::Lua::Type::STRING );
 
 	size_t secLen = 0;
@@ -998,7 +990,7 @@ LUA_FUNCTION_STATIC( SetSecondaryKey )
 
 LUA_FUNCTION_STATIC( GetSecondaryKey )
 {
-	Crypter *crypter = Get( state, 1 );
+	Crypter *crypter = Get( LUA, 1 );
 	bytes pubKey = crypter->GetSecondaryKey( );
 	LUA->PushString( reinterpret_cast<char *>( pubKey.data( ) ), pubKey.size( ) );
 	return 1;
@@ -1006,7 +998,7 @@ LUA_FUNCTION_STATIC( GetSecondaryKey )
 
 LUA_FUNCTION_STATIC( Decrypt )
 {
-	Crypter *crypter = Get( state, 1 );
+	Crypter *crypter = Get( LUA, 1 );
 	LUA->CheckType( 2, GarrysMod::Lua::Type::STRING );
 
 	size_t len = 0;
@@ -1027,7 +1019,7 @@ LUA_FUNCTION_STATIC( Decrypt )
 
 LUA_FUNCTION_STATIC( Encrypt )
 {
-	Crypter *crypter = Get( state, 1 );
+	Crypter *crypter = Get( LUA, 1 );
 	LUA->CheckType( 2, GarrysMod::Lua::Type::STRING );
 
 	size_t len = 0;
@@ -1046,9 +1038,12 @@ LUA_FUNCTION_STATIC( Encrypt )
 	return 1;
 }
 
-template<typename Crypter>
-LUA_FUNCTION_STATIC( Creator )
+template<typename Crypter, bool Secure = true>
+static int Creator( lua_State *state ) GMOD_NOEXCEPT
 {
+	GarrysMod::Lua::ILuaBase *LUA = state->luabase;
+	LUA->SetState( state );
+
 	Crypter *crypter = new( std::nothrow ) Crypter( );
 	if( crypter == nullptr )
 	{
@@ -1057,11 +1052,9 @@ LUA_FUNCTION_STATIC( Creator )
 		return 2;
 	}
 
-	UserData *userdata = reinterpret_cast<UserData *>( LUA->NewUserdata( sizeof( UserData ) ) );
-	userdata->crypter = crypter;
-	userdata->type = metatype;
+	LUA->PushUserType( crypter, metatype );
 
-	LUA->CreateMetaTableType( metaname, metatype );
+	LUA->PushMetaTable( metatype );
 	LUA->SetMetaTable( -2 );
 
 	LUA->CreateTable( );
@@ -1070,9 +1063,9 @@ LUA_FUNCTION_STATIC( Creator )
 	return 1;
 }
 
-void Initialize( lua_State *state )
+void Initialize( GarrysMod::Lua::ILuaBase *LUA )
 {
-	LUA->CreateMetaTableType( metaname, metatype );
+	metatype = LUA->CreateMetaTable( metaname );
 
 	LUA->PushCFunction( tostring );
 	LUA->SetField( -2, "__tostring" );
@@ -1152,7 +1145,7 @@ void Initialize( lua_State *state )
 	LUA->SetField( -2, "ECP" );
 }
 
-void Deinitialize( lua_State *state )
+void Deinitialize( GarrysMod::Lua::ILuaBase *LUA )
 {
 	LUA->PushNil( );
 	LUA->SetField( GarrysMod::Lua::INDEX_REGISTRY, metaname );

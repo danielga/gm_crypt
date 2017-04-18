@@ -56,7 +56,6 @@ CreateWorkspace({name = "crypt"})
 	if _OPTIONS["compile-cryptopp"] then
 		project("cryptopp")
 			kind("StaticLib")
-			defines("USE_PRECOMPILED_HEADERS")
 			includedirs({
 				CRYPTOPP_DIRECTORY .. "/include/cryptopp",
 				CRYPTOPP_DIRECTORY .. "/src"
@@ -69,4 +68,7 @@ CreateWorkspace({name = "crypt"})
 				["Header files"] = CRYPTOPP_DIRECTORY .. "/*.h",
 				["Source files"] = CRYPTOPP_DIRECTORY .. "/*.cpp"
 			})
+
+			filter("configurations:Release")
+				defines("NDEBUG")
 	end
