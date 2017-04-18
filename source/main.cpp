@@ -18,11 +18,11 @@ GMOD_MODULE_OPEN( )
 {
 	LUA->CreateTable( );
 
-	LUA->PushString( "crypt 1.1.4" );
+	LUA->PushString( "crypt 1.2.0" );
 	LUA->SetField( -2, "Version" );
 
 	// version num follows LuaJIT style, xx.yy.zz
-	LUA->PushNumber( 10104 );
+	LUA->PushNumber( 10200 );
 	LUA->SetField( -2, "VersionNum" );
 
 	LUA->PushCFunction( GenerateRandomBytes );

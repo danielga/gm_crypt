@@ -35,8 +35,6 @@ public:
 
 	virtual bool SetPrimaryKey( const bytes &priKey ) = 0;
 
-	virtual bytes GetPrimaryKey( ) const = 0;
-
 	virtual size_t GetValidSecondaryKeyLength( size_t length ) const = 0;
 
 	virtual bool GenerateSecondaryKey(
@@ -47,8 +45,6 @@ public:
 	) = 0;
 
 	virtual bool SetSecondaryKey( const bytes &secKey ) = 0;
-
-	virtual bytes GetSecondaryKey( ) const = 0;
 
 	virtual bool Decrypt( const bytes &data, bytes &decrypted ) = 0;
 
@@ -136,14 +132,6 @@ public:
 		return false;
 	}
 
-	bytes GetPrimaryKey( ) const
-	{
-		if( key.empty( ) )
-			return bytes( );
-
-		return bytes( key.begin( ), key.end( ) );
-	}
-
 	size_t GetValidSecondaryKeyLength( size_t length ) const
 	{
 		return encrypter.GetValidKeyLength( length );
@@ -190,14 +178,6 @@ public:
 		}
 
 		return false;
-	}
-
-	bytes GetSecondaryKey( ) const
-	{
-		if( iv.empty( ) )
-			return bytes( );
-
-		return bytes( iv.begin( ), iv.end( ) );
 	}
 
 	bool Decrypt( const bytes &encrypted, bytes &decrypted )
@@ -250,7 +230,6 @@ private:
 	{
 		decrypter.SetKey( priKey.data( ), priKey.size( ) );
 		encrypter.SetKey( priKey.data( ), priKey.size( ) );
-		key.Assign( priKey.data( ), priKey.size( ) );
 		keyset = true;
 	}
 
@@ -258,12 +237,9 @@ private:
 	{
 		decrypter.Resynchronize( secKey.data( ), secKey.size( ) );
 		encrypter.Resynchronize( secKey.data( ), secKey.size( ) );
-		iv.Assign( secKey.data( ), secKey.size( ) );
 	}
 
 	bool keyset;
-	CryptoPP::SecByteBlock key;
-	CryptoPP::SecByteBlock iv;
 	CryptoPP::CTR_Mode<CryptoPP::AES>::Decryption decrypter;
 	CryptoPP::CTR_Mode<CryptoPP::AES>::Encryption encrypter;
 	std::string lasterror;
@@ -352,14 +328,6 @@ public:
 		return false;
 	}
 
-	bytes GetPrimaryKey( ) const
-	{
-		bytes_string priStr;
-		bytes_sink privSink( priStr );
-		decrypter.GetKey( ).Save( privSink.Ref( ) );
-		return bytes( priStr.begin( ), priStr.end( ) );
-	}
-
 	size_t GetValidSecondaryKeyLength( size_t length ) const
 	{
 		return length;
@@ -416,14 +384,6 @@ public:
 		}
 
 		return false;
-	}
-
-	bytes GetSecondaryKey( ) const
-	{
-		bytes_string pubStr;
-		bytes_sink pubSink( pubStr );
-		encrypter.GetKey( ).Save( pubSink.Ref( ) );
-		return bytes( pubStr.begin( ), pubStr.end( ) );
 	}
 
 	bool Decrypt( const bytes &encrypted, bytes &decrypted )
@@ -488,7 +448,7 @@ private:
 
 	void CheckPublicKey( ) const
 	{
-		if( !prikeyset )
+		if( !pubkeyset )
 			throw CryptoPP::Exception( CryptoPP::Exception::OTHER_ERROR, "RSA public key was not set" );
 	}
 
@@ -588,14 +548,6 @@ public:
 		return false;
 	}
 
-	bytes GetPrimaryKey( ) const
-	{
-		bytes_string priStr;
-		bytes_sink privSink( priStr );
-		decrypter.GetKey( ).Save( privSink.Ref( ) );
-		return bytes( priStr.begin( ), priStr.end( ) );
-	}
-
 	size_t GetValidSecondaryKeyLength( size_t length ) const
 	{
 		return length;
@@ -646,14 +598,6 @@ public:
 		}
 
 		return false;
-	}
-
-	bytes GetSecondaryKey( ) const
-	{
-		bytes_string pubStr;
-		bytes_sink pubSink( pubStr );
-		encrypter.GetKey( ).Save( pubSink.Ref( ) );
-		return bytes( pubStr.begin( ), pubStr.end( ) );
 	}
 
 	bool Decrypt( const bytes &encrypted, bytes &decrypted )
@@ -718,7 +662,7 @@ private:
 
 	void CheckPublicKey( ) const
 	{
-		if( !prikeyset )
+		if( !pubkeyset )
 			throw CryptoPP::Exception( CryptoPP::Exception::OTHER_ERROR, "ECP public key was not set" );
 	}
 
@@ -923,14 +867,6 @@ LUA_FUNCTION_STATIC( SetPrimaryKey )
 	return 1;
 }
 
-LUA_FUNCTION_STATIC( GetPrimaryKey )
-{
-	Crypter *crypter = Get( LUA, 1 );
-	bytes privKey = crypter->GetPrimaryKey( );
-	LUA->PushString( reinterpret_cast<char *>( privKey.data( ) ), privKey.size( ) );
-	return 1;
-}
-
 LUA_FUNCTION_STATIC( GetValidSecondaryKeyLength )
 {
 	LUA->PushNumber( Get( LUA, 1 )->GetValidSecondaryKeyLength( static_cast<size_t>(
@@ -985,14 +921,6 @@ LUA_FUNCTION_STATIC( SetSecondaryKey )
 	}
 
 	LUA->PushBool( true );
-	return 1;
-}
-
-LUA_FUNCTION_STATIC( GetSecondaryKey )
-{
-	Crypter *crypter = Get( LUA, 1 );
-	bytes pubKey = crypter->GetSecondaryKey( );
-	LUA->PushString( reinterpret_cast<char *>( pubKey.data( ) ), pubKey.size( ) );
 	return 1;
 }
 
@@ -1112,9 +1040,6 @@ void Initialize( GarrysMod::Lua::ILuaBase *LUA )
 	LUA->PushCFunction( SetPrimaryKey );
 	LUA->SetField( -2, "SetPrimaryKey" );
 
-	LUA->PushCFunction( GetPrimaryKey );
-	LUA->SetField( -2, "GetPrimaryKey" );
-
 	LUA->PushCFunction( GetValidSecondaryKeyLength );
 	LUA->SetField( -2, "GetValidSecondaryKeyLength" );
 
@@ -1123,9 +1048,6 @@ void Initialize( GarrysMod::Lua::ILuaBase *LUA )
 
 	LUA->PushCFunction( SetSecondaryKey );
 	LUA->SetField( -2, "SetSecondaryKey" );
-
-	LUA->PushCFunction( GetSecondaryKey );
-	LUA->SetField( -2, "GetSecondaryKey" );
 
 	LUA->PushCFunction( Decrypt );
 	LUA->SetField( -2, "Decrypt" );
