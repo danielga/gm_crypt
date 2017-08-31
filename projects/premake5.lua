@@ -16,14 +16,25 @@ end
 
 include(gmcommon)
 
+local SOURCE_DIRECTORY = "../source"
 local CRYPTOPP_DIRECTORY = "../cryptopp"
 
 CreateWorkspace({name = "crypt"})
 	warnings("Off")
 
-	CreateProject({serverside = true})
+	CreateProject({serverside = true, manual_files = true})
 		IncludeLuaShared()
 		defines("CRYPTOPP_ENABLE_NAMESPACE_WEAK=1")
+		includedirs({
+			SOURCE_DIRECTORY .. "/common",
+			SOURCE_DIRECTORY .. "/module"
+		})
+		files({
+			SOURCE_DIRECTORY .. "/common/*.hpp",
+			SOURCE_DIRECTORY .. "/common/*.cpp",
+			SOURCE_DIRECTORY .. "/module/*.hpp",
+			SOURCE_DIRECTORY .. "/module/*.cpp"
+		})
 
 		filter({"system:windows", "options:not compile-cryptopp"})
 			includedirs(CRYPTOPP_DIRECTORY .. "/include")
@@ -37,9 +48,19 @@ CreateWorkspace({name = "crypt"})
 			includedirs(CRYPTOPP_DIRECTORY .. "/include")
 			links("cryptopp")
 
-	CreateProject({serverside = false})
+	CreateProject({serverside = false, manual_files = true})
 		IncludeLuaShared()
 		defines("CRYPTOPP_ENABLE_NAMESPACE_WEAK=1")
+		includedirs({
+			SOURCE_DIRECTORY .. "/common",
+			SOURCE_DIRECTORY .. "/module"
+		})
+		files({
+			SOURCE_DIRECTORY .. "/common/*.hpp",
+			SOURCE_DIRECTORY .. "/common/*.cpp",
+			SOURCE_DIRECTORY .. "/module/*.hpp",
+			SOURCE_DIRECTORY .. "/module/*.cpp"
+		})
 
 		filter({"system:windows", "options:not compile-cryptopp"})
 			includedirs(CRYPTOPP_DIRECTORY .. "/include")
@@ -72,3 +93,28 @@ CreateWorkspace({name = "crypt"})
 			filter("configurations:Release")
 				defines("NDEBUG")
 	end
+
+	project("testing")
+		kind("ConsoleApp")
+		includedirs(SOURCE_DIRECTORY .. "/common")
+		files({
+			SOURCE_DIRECTORY .. "/common/*.hpp",
+			SOURCE_DIRECTORY .. "/common/*.cpp",
+			SOURCE_DIRECTORY .. "/testing/*.cpp"
+		})
+		vpaths({
+			["Header files/*"] = SOURCE_DIRECTORY .. "/*.hpp",
+			["Source files/*"] = SOURCE_DIRECTORY .. "/*.cpp"
+		})
+
+		filter({"system:windows", "options:not compile-cryptopp"})
+			includedirs(CRYPTOPP_DIRECTORY .. "/include")
+			libdirs(CRYPTOPP_DIRECTORY .. "/lib")
+			links("cryptopp")
+
+		filter({"system:linux or macosx", "options:not compile-cryptopp"})
+			linkoptions("-Wl,-Bstatic,-lcryptopp,-Bdynamic")
+
+		filter("options:compile-cryptopp")
+			includedirs(CRYPTOPP_DIRECTORY .. "/include")
+			links("cryptopp")
