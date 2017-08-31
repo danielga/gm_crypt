@@ -686,7 +686,7 @@ static const char *invalid_error = "invalid crypter";
 inline void CheckType( GarrysMod::Lua::ILuaBase *LUA, int32_t index )
 {
 	if( !LUA->IsType( index, metatype ) )
-		luaL_typerror( LUA->state, index, metaname );
+		luaL_typerror( LUA->GetState(), index, metaname );
 }
 
 static Crypter *GetUserData( GarrysMod::Lua::ILuaBase *LUA, int32_t index )
@@ -709,11 +709,11 @@ LUA_FUNCTION_STATIC( tostring )
 
 #if defined _WIN32
 
-	lua_pushfstring( LUA->state, "%s: %p", metaname, Get( LUA, 1 ) );
+	lua_pushfstring( LUA->GetState(), "%s: %p", metaname, Get( LUA, 1 ) );
 
 #elif defined __linux || defined __APPLE__
 
-	lua_pushfstring( LUA->state, "%s: 0x%p", metaname, Get( LUA, 1 ) );
+	lua_pushfstring( LUA->GetState(), "%s: 0x%p", metaname, Get( LUA, 1 ) );
 
 #endif
 
@@ -738,7 +738,7 @@ LUA_FUNCTION_STATIC( index )
 
 	LUA->Pop( 2 );
 
-	lua_getfenv( LUA->state, 1 );
+	lua_getfenv( LUA->GetState(), 1 );
 	LUA->Push( 2 );
 	LUA->RawGet( -2 );
 	return 1;
@@ -748,7 +748,7 @@ LUA_FUNCTION_STATIC( newindex )
 {
 	CheckType( LUA, 1 );
 
-	lua_getfenv( LUA->state, 1 );
+	lua_getfenv( LUA->GetState(), 1 );
 	LUA->Push( 2 );
 	LUA->Push( 3 );
 	LUA->RawSet( -3 );
