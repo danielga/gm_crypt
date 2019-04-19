@@ -14,6 +14,8 @@ namespace cryptography
 
 	size_t AES::MaxPlaintextLength( size_t length ) const
 	{
+		length /= 8;
+
 		size_t remainder = length % CryptoPP::AES::BLOCKSIZE;
 		if( remainder == 0 )
 			return length;
@@ -23,6 +25,8 @@ namespace cryptography
 
 	size_t AES::CiphertextLength( size_t length ) const
 	{
+		length /= 8;
+
 		size_t remainder = length % CryptoPP::AES::BLOCKSIZE;
 		if( remainder == 0 )
 			return length;
@@ -32,21 +36,23 @@ namespace cryptography
 
 	size_t AES::FixedMaxPlaintextLength( ) const
 	{
-		return CryptoPP::AES::BLOCKSIZE;
+		return CryptoPP::AES::BLOCKSIZE * 8;
 	}
 
 	size_t AES::FixedCiphertextLength( ) const
 	{
-		return CryptoPP::AES::BLOCKSIZE;
+		return CryptoPP::AES::BLOCKSIZE * 8;
 	}
 
 	size_t AES::GetValidPrimaryKeyLength( size_t length ) const
 	{
-		return encrypter.GetValidKeyLength( length );
+		return encrypter.GetValidKeyLength( length / 8 );
 	}
 
 	bytes AES::GeneratePrimaryKey( size_t priSize )
 	{
+		priSize /= 8;
+
 		if( !encrypter.IsValidKeyLength( priSize ) )
 		{
 			SetLastError( "Invalid AES key length" );
@@ -83,11 +89,13 @@ namespace cryptography
 
 	size_t AES::GetValidSecondaryKeyLength( size_t length ) const
 	{
-		return encrypter.GetValidKeyLength( length );
+		return encrypter.GetValidKeyLength( length / 8 );
 	}
 
 	bytes AES::GenerateSecondaryKey( size_t secSize )
 	{
+		secSize /= 8;
+
 		if( !encrypter.IsValidKeyLength( secSize ) )
 		{
 			SetLastError( "Invalid AES IV length" );
