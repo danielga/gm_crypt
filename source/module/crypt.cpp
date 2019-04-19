@@ -206,7 +206,7 @@ LUA_FUNCTION_STATIC( GenerateSecondaryKey )
 	if( LUA->IsType( 2, GarrysMod::Lua::Type::STRING ) )
 	{
 		size_t priLen = 0;
-		const uint8_t *priKey = reinterpret_cast<const uint8_t *>( LUA->GetString( 3, &priLen ) );
+		const uint8_t *priKey = reinterpret_cast<const uint8_t *>( LUA->GetString( 2, &priLen ) );
 		cryptography::bytes privKey( priKey, priKey + priLen );
 		secKey = crypter->GenerateSecondaryKey( privKey );
 	}
