@@ -1,5 +1,7 @@
 #include <cryptography.hpp>
 
+#include <cryptopp/oids.h>
+
 namespace cryptography
 {
 	AES::AES( ) :
@@ -14,24 +16,24 @@ namespace cryptography
 
 	size_t AES::MaxPlaintextLength( size_t length ) const
 	{
-		length /= 8;
+		size_t bytesLength = length / 8;
 
-		size_t remainder = length % CryptoPP::AES::BLOCKSIZE;
+		size_t remainder = bytesLength % CryptoPP::AES::BLOCKSIZE;
 		if( remainder == 0 )
 			return length;
 
-		return length + CryptoPP::AES::BLOCKSIZE - remainder;
+		return ( bytesLength + CryptoPP::AES::BLOCKSIZE - remainder ) * 8;
 	}
 
 	size_t AES::CiphertextLength( size_t length ) const
 	{
-		length /= 8;
+		size_t bytesLength = length / 8;
 
-		size_t remainder = length % CryptoPP::AES::BLOCKSIZE;
+		size_t remainder = bytesLength % CryptoPP::AES::BLOCKSIZE;
 		if( remainder == 0 )
 			return length;
 
-		return length + CryptoPP::AES::BLOCKSIZE - remainder;
+		return ( bytesLength + CryptoPP::AES::BLOCKSIZE - remainder ) * 8;
 	}
 
 	size_t AES::FixedMaxPlaintextLength( ) const
@@ -46,7 +48,7 @@ namespace cryptography
 
 	size_t AES::GetValidPrimaryKeyLength( size_t length ) const
 	{
-		return encrypter.GetValidKeyLength( length / 8 );
+		return encrypter.GetValidKeyLength( length / 8 ) * 8;
 	}
 
 	bytes AES::GeneratePrimaryKey( size_t priSize )
@@ -89,7 +91,7 @@ namespace cryptography
 
 	size_t AES::GetValidSecondaryKeyLength( size_t length ) const
 	{
-		return encrypter.GetValidKeyLength( length / 8 );
+		return encrypter.GetValidKeyLength( length / 8 ) * 8;
 	}
 
 	bytes AES::GenerateSecondaryKey( size_t secSize )
@@ -276,7 +278,7 @@ namespace cryptography
 
 	size_t RSA::GetValidSecondaryKeyLength( size_t length ) const
 	{
-		return length;
+		return 0;
 	}
 
 	bytes RSA::GenerateSecondaryKey( size_t )
@@ -429,17 +431,42 @@ namespace cryptography
 
 	size_t ECP::GetValidPrimaryKeyLength( size_t length ) const
 	{
-		return length;
+		if( length <= 192 )
+			return 192;
+		else if( length <= 224 )
+			return 224;
+		else if( length <= 256 )
+			return 256;
+		else if( length <= 384 )
+			return 384;
+
+		return 521;
 	}
 
 	bytes ECP::GeneratePrimaryKey( size_t priSize )
 	{
+		static const std::unordered_map<size_t, CryptoPP::OID> KeySizeToCurve = {
+			{ 192, CryptoPP::ASN1::secp192r1( ) },
+			{ 224, CryptoPP::ASN1::secp224r1( ) },
+			{ 256, CryptoPP::ASN1::secp256r1( ) },
+			{ 384, CryptoPP::ASN1::secp384r1( ) },
+			{ 521, CryptoPP::ASN1::secp521r1( ) }
+		};
+
+		const auto pairIt = KeySizeToCurve.find( priSize );
+		if( pairIt == KeySizeToCurve.end( ) )
+		{
+			SetLastError( "Invalid ECP key size" );
+			return bytes( );
+		}
+
+		const CryptoPP::OID &curve = pairIt->second;
 		try
 		{
 			CryptoPP::ECIES<CryptoPP::ECP>::PrivateKey privKey;
 
 			CryptoPP::AutoSeededRandomPool prng;
-			privKey.GenerateRandomWithKeySize( prng, priSize );
+			privKey.Initialize( prng, curve );
 
 			bytes_string priStr;
 			bytes_sink privSink( priStr );
@@ -473,7 +500,7 @@ namespace cryptography
 
 	size_t ECP::GetValidSecondaryKeyLength( size_t length ) const
 	{
-		return length;
+		return 0;
 	}
 
 	bytes ECP::GenerateSecondaryKey( size_t )
