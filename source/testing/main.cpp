@@ -9,28 +9,27 @@ int main( int argc, char *argv[] )
 
 	cryptography::AES aes;
 
-	secondary = aes.GenerateSecondaryKey( 16 );
+	primary = aes.GeneratePrimaryKey( 256 );
+	if( primary.empty( ) )
+		throw std::runtime_error( aes.GetLastError( ) );
+
+	secondary = aes.GenerateSecondaryKey( 256 );
 	if( secondary.empty( ) )
 		throw std::runtime_error( aes.GetLastError( ) );
 
-	primary = aes.GeneratePrimaryKey( 32 );
-	if( primary.empty( ) )
-		throw std::runtime_error( aes.GetLastError( ) );
-
-	// ECP requires pre-built elliptical curve, random generator not implemented
 	cryptography::ECP ecp;
 
-	primary = ecp.GeneratePrimaryKey( 32 );
+	primary = ecp.GeneratePrimaryKey( 256 );
 	if( primary.empty( ) )
-		std::cout << ecp.GetLastError( ) << std::endl;
+		throw std::runtime_error( ecp.GetLastError( ) );
 
 	secondary = ecp.GenerateSecondaryKey( primary );
 	if( secondary.empty( ) )
-		std::cout << ecp.GetLastError( ) << std::endl;
+		throw std::runtime_error( ecp.GetLastError( ) );
 
 	cryptography::RSA rsa;
 
-	primary = rsa.GeneratePrimaryKey( 512 );
+	primary = rsa.GeneratePrimaryKey( 2048 );
 	if( primary.empty( ) )
 		throw std::runtime_error( rsa.GetLastError( ) );
 
