@@ -48,7 +48,10 @@ namespace cryptography
 	bytes AES::GeneratePrimaryKey( size_t priSize )
 	{
 		if( !encrypter.IsValidKeyLength( priSize ) )
+		{
+			SetLastError( "Invalid AES key length" );
 			return bytes( );
+		}
 
 		try
 		{
@@ -86,7 +89,10 @@ namespace cryptography
 	bytes AES::GenerateSecondaryKey( size_t secSize )
 	{
 		if( !encrypter.IsValidKeyLength( secSize ) )
+		{
+			SetLastError( "Invalid AES IV length" );
 			return bytes( );
+		}
 
 		try
 		{
@@ -104,10 +110,8 @@ namespace cryptography
 
 	bytes AES::GenerateSecondaryKey( const bytes & )
 	{
-		throw CryptoPP::Exception(
-			CryptoPP::Exception::NOT_IMPLEMENTED,
-			"Tried to generate an IV from an AES key"
-		);
+		SetLastError( "Tried to generate an IV from an AES key" );
+		return bytes( );
 	}
 
 	bool AES::SetSecondaryKey( const bytes &secKey )
@@ -269,10 +273,8 @@ namespace cryptography
 
 	bytes RSA::GenerateSecondaryKey( size_t )
 	{
-		throw CryptoPP::Exception(
-			CryptoPP::Exception::NOT_IMPLEMENTED,
-			"RSA private key is required to generate a public key"
-		);
+		SetLastError( "RSA private key is required to generate a public key" );
+		return bytes( );
 	}
 
 	bytes RSA::GenerateSecondaryKey( const bytes &priKey )
@@ -468,10 +470,8 @@ namespace cryptography
 
 	bytes ECP::GenerateSecondaryKey( size_t )
 	{
-		throw CryptoPP::Exception(
-			CryptoPP::Exception::NOT_IMPLEMENTED,
-			"ECP private key is required to generate a public key"
-		);
+		SetLastError( "ECP private key is required to generate a public key" );
+		return bytes( );
 	}
 
 	bytes ECP::GenerateSecondaryKey( const bytes &priKey )
