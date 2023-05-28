@@ -284,7 +284,7 @@ LUA_FUNCTION_STATIC( SetKey )
 }
 
 template<typename Hasher, bool Secure = true>
-static int Creator( lua_State *state ) GMOD_NOEXCEPT
+static int Creator( lua_State *state )
 {
 	GarrysMod::Lua::ILuaBase *LUA = state->luabase;
 	LUA->SetState( state );

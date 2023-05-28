@@ -287,7 +287,7 @@ LUA_FUNCTION_STATIC( Encrypt )
 }
 
 template<typename Crypter>
-static int Creator( lua_State *state ) GMOD_NOEXCEPT
+static int Creator( lua_State *state )
 {
 	GarrysMod::Lua::ILuaBase *LUA = state->luabase;
 	LUA->SetState( state );
