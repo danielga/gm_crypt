@@ -2,6 +2,8 @@
 
 #include <cryptopp/oids.h>
 
+#include <unordered_map>
+
 namespace cryptography
 {
 	AES::AES( ) :

@@ -171,7 +171,7 @@ LUA_FUNCTION_STATIC( SetPrimaryKey )
 	cryptography::Crypter *crypter = Get( LUA, 1 );
 	LUA->CheckType( 2, GarrysMod::Lua::Type::STRING );
 
-	size_t priLen = 0;
+	uint32_t priLen = 0;
 	const uint8_t *priKey = reinterpret_cast<const uint8_t *>( LUA->GetString( 2, &priLen ) );
 
 	cryptography::bytes privKey( priKey, priKey + priLen );
@@ -205,7 +205,7 @@ LUA_FUNCTION_STATIC( GenerateSecondaryKey )
 	cryptography::bytes secKey;
 	if( LUA->IsType( 2, GarrysMod::Lua::Type::STRING ) )
 	{
-		size_t priLen = 0;
+		uint32_t priLen = 0;
 		const uint8_t *priKey = reinterpret_cast<const uint8_t *>( LUA->GetString( 2, &priLen ) );
 		cryptography::bytes privKey( priKey, priKey + priLen );
 		secKey = crypter->GenerateSecondaryKey( privKey );
@@ -229,7 +229,7 @@ LUA_FUNCTION_STATIC( SetSecondaryKey )
 	cryptography::Crypter *crypter = Get( LUA, 1 );
 	LUA->CheckType( 2, GarrysMod::Lua::Type::STRING );
 
-	size_t secLen = 0;
+	uint32_t secLen = 0;
 	const uint8_t *secKey = reinterpret_cast<const uint8_t *>( LUA->GetString( 2, &secLen ) );
 
 	cryptography::bytes secoKey( secKey, secKey + secLen );
@@ -249,7 +249,7 @@ LUA_FUNCTION_STATIC( Decrypt )
 	cryptography::Crypter *crypter = Get( LUA, 1 );
 	LUA->CheckType( 2, GarrysMod::Lua::Type::STRING );
 
-	size_t len = 0;
+	uint32_t len = 0;
 	const uint8_t *data = reinterpret_cast<const uint8_t *>( LUA->GetString( 2, &len ) );
 
 	cryptography::bytes encrypted( data, data + len );
@@ -270,7 +270,7 @@ LUA_FUNCTION_STATIC( Encrypt )
 	cryptography::Crypter *crypter = Get( LUA, 1 );
 	LUA->CheckType( 2, GarrysMod::Lua::Type::STRING );
 
-	size_t len = 0;
+	uint32_t len = 0;
 	const uint8_t *data = reinterpret_cast<const uint8_t *>( LUA->GetString( 2, &len ) );
 
 	cryptography::bytes decrypted( data, data + len );
