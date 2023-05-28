@@ -50,6 +50,8 @@ CreateWorkspace({name = "crypt"})
 
 	project("cryptopp")
 		kind("StaticLib")
+		vectorextensions("AVX2")
+		isaextensions({"PCLMUL", "AES"})
 		includedirs({
 			CRYPTOPP_DIRECTORY .. "/include/cryptopp",
 			CRYPTOPP_DIRECTORY .. "/src"
@@ -65,6 +67,9 @@ CreateWorkspace({name = "crypt"})
 
 		filter("configurations:Release")
 			defines("NDEBUG")
+
+		filter("system:linux or macosx")
+			buildoptions("-msha")
 
 	project("testing")
 		kind("ConsoleApp")
