@@ -69,6 +69,7 @@ CreateWorkspace({name = "crypt"})
 			defines("NDEBUG")
 
 		filter("system:linux or macosx")
+			removeflags("LinkTimeOptimization")
 			buildoptions("-msha")
 
 	project("testing")
